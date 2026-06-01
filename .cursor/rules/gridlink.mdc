@@ -1,0 +1,68 @@
+---
+description: GridLink project conventions
+alwaysApply: true
+---
+
+# GridLink — The Procurement Operating System for Fuel
+
+## Product Context
+GridLink is an AI-powered fuel procurement platform — think LinkedIn meets Procore for the fuel industry. It connects enterprise fuel buyers (food/ag, logistics, manufacturing, airports, hospitals, utilities, government) with verified fuel suppliers nationwide.
+
+The core value prop: replace email + spreadsheet procurement with a centralized, audit-trail system of record.
+
+## Design References
+- **Procore** — enterprise dashboard polish, clean data density
+- **FuelMe** — the onboarding form structure (we're modeling this directly)
+- **Quest CDN** — bid/RFP layouts
+- **Met Council** — contracting opportunities list design
+
+## Visual Style
+- **Primary color:** Deep navy `#0A2540` (trust, enterprise)
+- **Accent:** Electric blue `#3B82F6` (CTAs, GridLink Verified badge)
+- **Success/Verified:** Emerald `#10B981`
+- **Background:** White / `#F9FAFB`
+- **Typography:** Inter (already in Next.js default)
+- **Feel:** Enterprise SaaS. Generous whitespace. Crisp borders. Subtle shadows. NOT a flashy startup landing page — investors should see "this looks like Procore."
+
+## Code Conventions
+- Next.js 14 App Router, TypeScript strict mode
+- Server components by default, `"use client"` only when needed
+- shadcn/ui for all UI primitives — no custom button components
+- Tailwind utility classes, no CSS modules
+- React Hook Form + Zod for ALL forms
+- Supabase for auth, DB, storage
+- File structure:
+  - `/src/app` — routes
+  - `/src/components` — shared components
+  - `/src/components/ui` — shadcn primitives (don't modify)
+  - `/src/lib` — utilities, supabase client, types
+  - `/src/lib/schemas` — Zod schemas
+  - `/src/lib/types.ts` — shared TS types
+
+## Routing Structure
+- `/` — Marketing landing page
+- `/become-a-supplier` — Public interest form
+- `/vendor-registration/[token]` — Vendor onboarding form (token-gated, no login)
+- `/login` — Unified login (role-based redirect)
+- `/signup` — Buyer signup only (vendors signup via approval flow)
+- `/buyer/*` — Buyer dashboard routes
+- `/vendor/*` — Vendor dashboard routes
+- `/admin/*` — GridLink admin panel
+- `/directory` — Public-facing GridLink Verified Directory (buyer auth required to view full profiles)
+
+## User Roles (in order of access)
+1. `buyer` — enterprise procurement user
+2. `vendor` — verified fuel supplier
+3. `admin` — GridLink team (reviews, approves, manages platform)
+
+## Critical Workflows
+1. **Vendor onboarding has TWO entry points**: GridLink invites OR vendor self-applies via "Become a Supplier"
+2. **Vendor does NOT create credentials until AFTER admin approval** — they fill out the form via a one-time token link, get reviewed, and only then receive a "Create Account" email.
+3. **GridLink Verified** is the core badge — granted only after admin review of company info, insurance, certifications, and compliance docs.
+4. **The Verified Directory** is the most important screen. It must support multi-faceted filtering: state, products offered, capabilities, certifications, annual gallons, emergency response time.
+
+## Don'ts
+- Don't build AI/ML features yet — MVP is rules-based
+- Don't build payments
+- Don't build the actual bid-matching/award engine — just the RFP creation, response collection, and side-by-side comparison view
+- Don't over-engineer. Demo-quality > production-quality for July 10.
