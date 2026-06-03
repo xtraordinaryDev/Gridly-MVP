@@ -6,9 +6,11 @@ import {
   FileStack,
   ShieldCheck,
   Truck,
+  UserPlus,
 } from "lucide-react"
 
 import { getDashboardStats, listApplications } from "@/lib/data/applications"
+import { countPendingBuyerApplications } from "@/lib/data/buyer-applications"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge, SourceBadge } from "@/components/admin/status-badge"
 
@@ -22,9 +24,10 @@ function formatDate(value: string | null) {
 }
 
 export default async function AdminDashboardPage() {
-  const [stats, applications] = await Promise.all([
+  const [stats, applications, pendingBuyers] = await Promise.all([
     getDashboardStats(),
     listApplications(),
+    countPendingBuyerApplications(),
   ])
 
   const recent = applications.slice(0, 5)
@@ -52,6 +55,13 @@ export default async function AdminDashboardPage() {
       accent: "text-brand-blue bg-brand-blue/10",
     },
     {
+      label: "Buyer requests",
+      value: pendingBuyers,
+      icon: UserPlus,
+      href: "/admin/buyers?status=pending_review",
+      accent: "text-amber-600 bg-amber-100",
+    },
+    {
       label: "Buyer organizations",
       value: stats.buyerOrganizations,
       icon: Building2,
@@ -71,7 +81,7 @@ export default async function AdminDashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {kpis.map((kpi) => (
           <Link key={kpi.label} href={kpi.href} className="group">
             <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">

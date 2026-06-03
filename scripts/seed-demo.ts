@@ -56,17 +56,20 @@ function supabaseAdmin() {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
+// NOTE: ids must be valid UUIDs — every character between the dashes must be
+// hex (0-9, a-f). Earlier prefixes 'v'/'r'/'o' were rejected by Postgres, so the
+// vendor/rfp/org upserts silently failed. Use distinct hex prefixes instead.
 function vendorId(i: number) {
-  return `v1000001-0001-4001-8001-${String(i + 1).padStart(12, "0")}`
+  return `d1000001-0001-4001-8001-${String(i + 1).padStart(12, "0")}`
 }
 function appId(i: number) {
   return `a1000001-0001-4001-8001-${String(i + 1).padStart(12, "0")}`
 }
 function rfpId(i: number) {
-  return `r1000001-0001-4001-8001-${String(i + 1).padStart(12, "0")}`
+  return `e1000001-0001-4001-8001-${String(i + 1).padStart(12, "0")}`
 }
 function orgId(i: number) {
-  return `o1000001-0001-4001-8001-${String(i + 1).padStart(12, "0")}`
+  return `c1000001-0001-4001-8001-${String(i + 1).padStart(12, "0")}`
 }
 
 function daysFromNow(days: number) {
@@ -120,9 +123,18 @@ async function clearDemoData(sb: ReturnType<typeof supabaseAdmin>) {
   }
   await sb.from("vendor_applications").delete().eq("is_demo", true)
 
+  await sb.from("buyer_applications").delete().eq("is_demo", true)
+
   await sb.from("buyer_organizations").delete().eq("is_demo", true)
 
-  const { data: demoProfiles } = await sb.from("profiles").select("id").eq("is_demo", true)
+  // Only remove demo *buyer* logins here — seedBuyers recreates them. The admin
+  // and vendor demo logins are managed by create-demo-logins.ts; deleting them
+  // here would lock you out after every reseed.
+  const { data: demoProfiles } = await sb
+    .from("profiles")
+    .select("id")
+    .eq("is_demo", true)
+    .eq("role", "buyer")
   for (const p of demoProfiles ?? []) {
     await sb.auth.admin.deleteUser(p.id as string)
   }
@@ -557,6 +569,75 @@ async function seedRfps(
 }
 
 // ---------------------------------------------------------------------------
+// Buyer access requests (the admin approval queue)
+// ---------------------------------------------------------------------------
+const BUYER_APPLICATIONS = [
+  {
+    fullName: "Jordan Kim",
+    companyName: "Metro Transit Authority",
+    email: "procurement@metrotransit.example.com",
+    phone: "(612) 555-0117",
+    industry: "Logistics & Transportation",
+    estimatedVolume: "5M – 25M gal/yr",
+    useCase:
+      "900-vehicle transit fleet; consolidate diesel + DEF sourcing and automate compliance.",
+    status: "pending_review" as const,
+  },
+  {
+    fullName: "Alicia Romero",
+    companyName: "Mercy Regional Health",
+    email: "facilities@mercyregional.example.com",
+    phone: "(414) 555-0143",
+    industry: "Healthcare / Hospital",
+    estimatedVolume: "1M – 5M gal/yr",
+    useCase:
+      "Backup generator fuel and heating oil across 6 hospital campuses; need verified emergency-response suppliers.",
+    status: "pending_review" as const,
+  },
+  {
+    fullName: "Dev Patel",
+    companyName: "Harvest Foods Co.",
+    email: "energy@harvestfoods.example.com",
+    phone: "(515) 555-0190",
+    industry: "Food & Agriculture",
+    estimatedVolume: "25M+ gal/yr",
+    useCase: "Multi-plant manufacturer sourcing diesel and propane nationwide.",
+    status: "approved" as const,
+  },
+  {
+    fullName: "Morgan Lee",
+    companyName: "Skyport Aviation Services",
+    email: "ops@skyport.example.com",
+    phone: "(305) 555-0166",
+    industry: "Aviation / Airport",
+    estimatedVolume: "< 100K gal/yr",
+    useCase: "Small FBO exploring jet fuel options.",
+    status: "rejected" as const,
+  },
+]
+
+async function seedBuyerApplications(sb: ReturnType<typeof supabaseAdmin>) {
+  console.log(`Seeding ${BUYER_APPLICATIONS.length} buyer access requests…`)
+  for (let i = 0; i < BUYER_APPLICATIONS.length; i++) {
+    const b = BUYER_APPLICATIONS[i]
+    const reviewed = b.status !== "pending_review"
+    await sb.from("buyer_applications").insert({
+      is_demo: true,
+      full_name: b.fullName,
+      company_name: b.companyName,
+      email: b.email,
+      phone: b.phone,
+      industry: b.industry,
+      estimated_volume: b.estimatedVolume,
+      use_case: b.useCase,
+      status: b.status,
+      submitted_at: daysAgo(5 + i),
+      reviewed_at: reviewed ? daysAgo(2 + i) : null,
+    })
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
@@ -569,6 +650,7 @@ async function main() {
   const buyerIds = await seedBuyers(sb)
   const vendorIds = await seedVendors(sb)
   await seedApplications(sb, vendorIds)
+  await seedBuyerApplications(sb)
   await seedRfps(sb, buyerIds, vendorIds)
 
   console.log("\nDemo seed complete.\n")

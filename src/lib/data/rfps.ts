@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import {
   sendBidSubmittedEmail,
+  sendNewRfpNotification,
   sendRfpAwardedEmails,
   sendRfpInvitationEmails,
 } from "@/lib/email/notifications"
@@ -738,6 +739,17 @@ export async function saveRfpFromWizard(
   }
 
   const id = row.id as string
+
+  // Notify the GridLink operator that an RFP was created (draft or published).
+  await sendNewRfpNotification({
+    rfpId: id,
+    rfpTitle: input.title,
+    buyerName,
+    fuelType: input.fuelType,
+    quantityGallons: input.quantityGallons,
+    deliveryStates: input.deliveryStates,
+    status: publish ? "published" : "draft",
+  })
 
   if (publish) {
     const admin = createAdminClient()

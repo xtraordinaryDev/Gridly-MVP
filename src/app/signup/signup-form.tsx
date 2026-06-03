@@ -8,9 +8,22 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 
-import { BuyerSignupSchema, type BuyerSignup } from "@/lib/schemas/buyer-signup"
+import {
+  BUYER_INDUSTRIES,
+  BUYER_VOLUME_RANGES,
+  BuyerAccessRequestSchema,
+  type BuyerAccessRequest,
+} from "@/lib/schemas/buyer-access-request"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Form,
   FormControl,
@@ -19,29 +32,30 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { signUpBuyer } from "./actions"
+import { requestBuyerAccess } from "./actions"
 
 export function SignupForm({ preview }: { preview: boolean }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  const form = useForm<BuyerSignup>({
-    resolver: zodResolver(BuyerSignupSchema),
+  const form = useForm<BuyerAccessRequest>({
+    resolver: zodResolver(BuyerAccessRequestSchema),
     defaultValues: {
       fullName: "",
       companyName: "",
       email: "",
-      password: "",
-      confirmPassword: "",
+      phone: "",
+      industry: undefined,
+      estimatedVolume: undefined,
+      useCase: "",
     },
   })
 
-  function onSubmit(values: BuyerSignup) {
+  function onSubmit(values: BuyerAccessRequest) {
     startTransition(async () => {
-      const res = await signUpBuyer(values)
+      const res = await requestBuyerAccess(values)
       if (res.ok) {
-        toast.success("Welcome to GridLink.")
-        router.push("/buyer/dashboard")
+        router.push("/signup/submitted")
       } else {
         toast.error(res.message)
       }
@@ -77,40 +91,96 @@ export function SignupForm({ preview }: { preview: boolean }) {
             </FormItem>
           )}
         />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Work email</FormLabel>
+                <FormControl>
+                  <Input type="email" placeholder="you@company.com" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Phone</FormLabel>
+                <FormControl>
+                  <Input placeholder="(555) 123-4567" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="industry"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Industry</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select industry" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {BUYER_INDUSTRIES.map((ind) => (
+                      <SelectItem key={ind} value={ind}>
+                        {ind}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="estimatedVolume"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Annual fuel volume</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Optional" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {BUYER_VOLUME_RANGES.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
         <FormField
           control={form.control}
-          name="email"
+          name="useCase"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Work email</FormLabel>
+              <FormLabel>What do you need GridLink for?</FormLabel>
               <FormControl>
-                <Input type="email" placeholder="you@company.com" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Password</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder="At least 8 characters" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="confirmPassword"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Confirm password</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder="Re-enter password" {...field} />
+                <Textarea
+                  rows={3}
+                  placeholder="Tell us about your fuel procurement needs, fleet/sites, and what you're looking to source."
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -118,7 +188,7 @@ export function SignupForm({ preview }: { preview: boolean }) {
         />
 
         <p className="text-xs text-muted-foreground">
-          Buyer accounts only. Fuel suppliers apply via{" "}
+          Fuel suppliers apply via{" "}
           <Link href="/become-a-supplier" className="text-brand-blue hover:underline">
             Become a Supplier
           </Link>
@@ -127,12 +197,12 @@ export function SignupForm({ preview }: { preview: boolean }) {
 
         <Button type="submit" size="lg" disabled={isPending} className="w-full gap-2">
           {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-          Create buyer account
+          Request access
         </Button>
 
         {preview ? (
           <p className="text-center text-xs text-muted-foreground">
-            Preview mode — you&apos;ll land on the buyer dashboard.
+            Preview mode — submitting shows the confirmation page.
           </p>
         ) : null}
 

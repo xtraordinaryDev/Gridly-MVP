@@ -4,6 +4,9 @@ import { createElement, type ReactElement } from "react"
 import { Resend } from "resend"
 
 import {
+  BuyerAccessRequestReceived,
+  BuyerApprovedCreateAccount,
+  BuyerRejected,
   DailyOpportunityDigest,
   RFPInvitation,
   RFPAwardedNotification,
@@ -13,6 +16,9 @@ import {
   VendorOnboardingInvite,
   VendorRejected,
 } from "@/emails"
+import type { BuyerAccessRequestReceivedProps } from "@/emails/BuyerAccessRequestReceived"
+import type { BuyerApprovedCreateAccountProps } from "@/emails/BuyerApprovedCreateAccount"
+import type { BuyerRejectedProps } from "@/emails/BuyerRejected"
 import type { DailyOpportunityDigestProps } from "@/emails/DailyOpportunityDigest"
 import type { RFPInvitationProps } from "@/emails/RFPInvitation"
 import type { RFPAwardedNotificationProps } from "@/emails/RFPAwardedNotification"
@@ -31,6 +37,9 @@ export type EmailTemplate =
   | { template: "vendor-approved-create-account"; data: VendorApprovedCreateAccountProps }
   | { template: "vendor-info-requested"; data: VendorInfoRequestedProps }
   | { template: "vendor-rejected"; data: VendorRejectedProps }
+  | { template: "buyer-access-request-received"; data: BuyerAccessRequestReceivedProps }
+  | { template: "buyer-approved-create-account"; data: BuyerApprovedCreateAccountProps }
+  | { template: "buyer-rejected"; data: BuyerRejectedProps }
   | { template: "rfp-invitation"; data: RFPInvitationProps }
   | { template: "daily-opportunity-digest"; data: DailyOpportunityDigestProps }
   | { template: "rfp-awarded"; data: RFPAwardedNotificationProps }
@@ -52,6 +61,12 @@ function subjectFor(payload: EmailTemplate): string {
       return "Action Required: GridLink Application"
     case "vendor-rejected":
       return "Update on your GridLink application"
+    case "buyer-access-request-received":
+      return "We've received your GridLink access request"
+    case "buyer-approved-create-account":
+      return "You're approved — welcome to GridLink"
+    case "buyer-rejected":
+      return "Update on your GridLink access request"
     case "rfp-invitation":
       return `New Opportunity from ${payload.data.buyerName} — ${payload.data.rfpTitle}`
     case "daily-opportunity-digest":
@@ -75,6 +90,12 @@ function renderTemplate(payload: EmailTemplate): ReactElement {
       return createElement(VendorInfoRequested, payload.data)
     case "vendor-rejected":
       return createElement(VendorRejected, payload.data)
+    case "buyer-access-request-received":
+      return createElement(BuyerAccessRequestReceived, payload.data)
+    case "buyer-approved-create-account":
+      return createElement(BuyerApprovedCreateAccount, payload.data)
+    case "buyer-rejected":
+      return createElement(BuyerRejected, payload.data)
     case "rfp-invitation":
       return createElement(RFPInvitation, payload.data)
     case "daily-opportunity-digest":

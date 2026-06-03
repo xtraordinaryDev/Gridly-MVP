@@ -1,66 +1,53 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { BuyerSignupSchema } from "@/lib/schemas/buyer-signup"
+import { BuyerAccessRequestSchema } from "@/lib/schemas/buyer-access-request"
+import { sendEmail } from "@/lib/email"
 
-export type SignupResult = { ok: true } | { ok: false; message: string }
+export type RequestResult = { ok: true } | { ok: false; message: string }
 
-export async function signUpBuyer(values: unknown): Promise<SignupResult> {
-  const parsed = BuyerSignupSchema.safeParse(values)
+export async function requestBuyerAccess(values: unknown): Promise<RequestResult> {
+  const parsed = BuyerAccessRequestSchema.safeParse(values)
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid input." }
   }
+
+  const { fullName, companyName, email, phone, industry, estimatedVolume, useCase } =
+    parsed.data
 
   if (!isSupabaseConfigured()) {
     return { ok: true }
   }
 
-  const { fullName, companyName, email, password } = parsed.data
-
   try {
     const admin = createAdminClient()
-    const { data: created, error: createError } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { role: "buyer", company_name: companyName },
-    })
-
-    if (createError || !created.user) {
-      const msg = createError?.message?.includes("already")
-        ? "An account already exists for this email. Try signing in."
-        : "Couldn't create your account. Please try again."
-      return { ok: false, message: msg }
-    }
-
-    const userId = created.user.id
-
-    await admin.from("profiles").upsert({
-      id: userId,
-      role: "buyer",
+    const { error } = await admin.from("buyer_applications").insert({
       full_name: fullName,
       company_name: companyName,
-    })
-
-    await admin.from("buyer_organizations").insert({
-      name: companyName,
-      primary_contact_id: userId,
-    })
-
-    const supabase = await createClient()
-    const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
-      password,
+      phone,
+      industry,
+      estimated_volume: estimatedVolume ?? null,
+      use_case: useCase,
+      status: "pending_review",
+      submitted_at: new Date().toISOString(),
     })
-    if (signInError) {
-      return { ok: false, message: "Account created — please sign in." }
+
+    if (error) {
+      console.error("requestBuyerAccess error:", error.message)
+      return { ok: false, message: "Couldn't submit your request. Please try again." }
     }
+
+    await sendEmail({
+      to: email,
+      template: "buyer-access-request-received",
+      data: { contactName: fullName, companyName },
+    })
 
     return { ok: true }
   } catch (err) {
-    console.error("signUpBuyer error:", err)
+    console.error("requestBuyerAccess error:", err)
     return { ok: false, message: "Something went wrong. Please try again." }
   }
 }

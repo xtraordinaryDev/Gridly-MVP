@@ -86,7 +86,7 @@ export function LoginForm({ preview }: { preview: boolean }) {
         <p className="text-center text-sm text-muted-foreground">
           New buyer?{" "}
           <Link href="/signup" className="font-medium text-brand-blue hover:underline">
-            Create an account
+            Request access
           </Link>
         </p>
       </form>

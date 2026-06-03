@@ -6,8 +6,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { SignupForm } from "./signup-form"
 
 export const metadata: Metadata = {
-  title: "Sign up — GridLink",
-  description: "Create a buyer account to source fuel and manage RFPs on GridLink.",
+  title: "Request access — GridLink",
+  description: "Request a buyer account to source fuel and manage RFPs on GridLink.",
 }
 
 export default function SignupPage() {
@@ -24,9 +24,10 @@ export default function SignupPage() {
         </Link>
 
         <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
-          <h1 className="text-xl font-bold text-navy">Create your buyer account</h1>
+          <h1 className="text-xl font-bold text-navy">Request buyer access</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Source fuel faster with the GridLink Verified supplier network.
+            Tell us about your organization. Our team reviews requests and sends approved buyers a
+            link to create their account.
           </p>
           <div className="mt-6">
             <SignupForm preview={!isSupabaseConfigured()} />

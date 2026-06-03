@@ -42,6 +42,48 @@ export async function sendRfpInvitationEmails(params: {
   )
 }
 
+export async function sendNewRfpNotification(params: {
+  rfpId: string
+  rfpTitle: string
+  buyerName: string
+  fuelType: string
+  quantityGallons: number
+  deliveryStates: string[]
+  status: "draft" | "published"
+}) {
+  // Internal "ops" notification — sent to the GridLink operator address.
+  const to = process.env.GRIDLINK_NOTIFY_EMAIL?.trim()
+  if (!to) return // no recipient configured; skip silently
+
+  const base = siteUrl()
+  const states = params.deliveryStates.join(", ") || "—"
+  const summary = [
+    `${params.buyerName} created a new RFP on GridLink.`,
+    "",
+    `Title:     ${params.rfpTitle}`,
+    `Fuel:      ${params.fuelType}`,
+    `Quantity:  ${params.quantityGallons.toLocaleString()} gal`,
+    `States:    ${states}`,
+    `Status:    ${params.status}`,
+    "",
+    `View it: ${base}/buyer/rfps/${params.rfpId}`,
+  ].join("\n")
+
+  if (!process.env.RESEND_API_KEY) {
+    console.info(`[GridLink email] New RFP → ${to}\n${summary}`)
+    return
+  }
+
+  const { Resend } = await import("resend")
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL?.trim() ?? "GridLink <onboarding@resend.dev>",
+    to,
+    subject: `New RFP: ${params.rfpTitle} — ${params.buyerName}`,
+    text: summary,
+  })
+}
+
 export async function sendBidSubmittedEmail(params: {
   buyerEmail: string
   rfpTitle: string
