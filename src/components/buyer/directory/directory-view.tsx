@@ -34,6 +34,17 @@ const SORT_OPTIONS: { value: DirectorySort; label: string }[] = [
   { value: "az", label: "A–Z" },
 ]
 
+const CERT_TABS: { label: string; cert: string | null }[] = [
+  { label: "All Suppliers", cert: null },
+  { label: "Women-Owned (WBE)", cert: "WBE" },
+  { label: "Veteran-Owned", cert: "Veteran-Owned" },
+  { label: "Minority-Owned (MBE)", cert: "MBE" },
+  { label: "Disadvantaged (DBE)", cert: "DBE" },
+  { label: "Small Business (SBE)", cert: "SBE" },
+  { label: "HUBZone", cert: "HUBZone" },
+  { label: "8(a)", cert: "8(a)" },
+]
+
 export function DirectoryView({ vendors }: { vendors: DirectoryVendor[] }) {
   const [filters, setFilters] = useState<DirectoryFilters>(DEFAULT_DIRECTORY_FILTERS)
   const [view, setView] = useState<"grid" | "list">("grid")
@@ -54,11 +65,44 @@ export function DirectoryView({ vendors }: { vendors: DirectoryVendor[] }) {
     setPage(1)
   }
 
+  const activeCertTab =
+    filters.certifications.length === 1 ? filters.certifications[0] : null
+
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 lg:flex-row lg:p-8">
       <DirectoryFiltersPanel filters={filters} onChange={updateFilters} />
 
       <div className="min-w-0 flex-1">
+        {/* Certification quick-filter tabs */}
+        <div className="mb-4 flex gap-1 overflow-x-auto border-b border-border pb-px">
+          {CERT_TABS.map((tab) => {
+            const active =
+              tab.cert === null
+                ? filters.certifications.length === 0
+                : activeCertTab === tab.cert
+            return (
+              <button
+                key={tab.label}
+                type="button"
+                onClick={() =>
+                  updateFilters({
+                    ...filters,
+                    certifications: tab.cert === null ? [] : [tab.cert],
+                  })
+                }
+                className={cn(
+                  "whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                  active
+                    ? "border-brand-blue text-brand-blue"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-navy"
+                )}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+
         <div className="mb-4 rounded-xl border border-brand-blue/20 bg-brand-blue/5 px-4 py-3">
           <p className="flex items-start gap-2 text-sm text-navy">
             <Sparkles className="mt-0.5 size-4 shrink-0 text-brand-blue" />

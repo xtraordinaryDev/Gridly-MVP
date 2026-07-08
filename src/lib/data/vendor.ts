@@ -169,6 +169,30 @@ const MOCK_OPPORTUNITIES: Opportunity[] = [
 
 const MOCK_ACTIVITY: ActivityEvent[] = [
   {
+    id: "a0a",
+    type: "invited",
+    label: "Invited to “RUSH: Peaker Plant Fuel Oil — July Heat Event” by Northern States Power",
+    date: "2026-07-05T07:45:00Z",
+  },
+  {
+    id: "a0b",
+    type: "viewed",
+    label: "Viewed “DEF Supply — Regional Distribution Hubs”",
+    date: "2026-07-03T09:00:00Z",
+  },
+  {
+    id: "a0c",
+    type: "invited",
+    label: "Invited to “Backup Generator Diesel — 14 Hospital Campuses” by Mercy Health Network",
+    date: "2026-06-30T14:00:00Z",
+  },
+  {
+    id: "a0d",
+    type: "viewed",
+    label: "Viewed “Jet Fuel & Ground Fleet Diesel — FY27”",
+    date: "2026-06-29T08:15:00Z",
+  },
+  {
     id: "a1",
     type: "submitted",
     label: "Submitted bid for “Heating Oil & Diesel — Annual Contract”",

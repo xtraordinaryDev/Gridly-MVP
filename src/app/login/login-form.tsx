@@ -6,7 +6,7 @@ import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
+import { Building2, Loader2, ShieldCheck, Truck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -78,9 +78,34 @@ export function LoginForm({ preview }: { preview: boolean }) {
         </Button>
 
         {preview ? (
-          <p className="text-center text-xs text-muted-foreground">
-            Preview mode — redirects to the buyer dashboard.
-          </p>
+          <div className="space-y-2 rounded-xl border border-dashed border-border bg-muted/40 p-3">
+            <p className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Demo — sign in as
+            </p>
+            <div className="grid gap-2">
+              <Link
+                href="/buyer/dashboard"
+                className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-navy transition-colors hover:border-brand-blue/40 hover:bg-brand-blue/5"
+              >
+                <Building2 className="size-4 text-brand-blue" />
+                Buyer — Metro Transit Authority
+              </Link>
+              <Link
+                href="/vendor/dashboard"
+                className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-navy transition-colors hover:border-brand-blue/40 hover:bg-brand-blue/5"
+              >
+                <Truck className="size-4 text-emerald" />
+                Supplier — Apex Fuel Co.
+              </Link>
+              <Link
+                href="/admin"
+                className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-navy transition-colors hover:border-brand-blue/40 hover:bg-brand-blue/5"
+              >
+                <ShieldCheck className="size-4 text-navy" />
+                Admin — GridLink Team
+              </Link>
+            </div>
+          </div>
         ) : null}
 
         <p className="text-center text-sm text-muted-foreground">

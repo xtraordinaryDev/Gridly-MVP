@@ -40,20 +40,11 @@ export function SiteHeader() {
           <Link
             href="/login"
             className={cn(
-              buttonVariants({ variant: "ghost", size: "lg" }),
-              "hidden lg:inline-flex"
-            )}
-          >
-            For Buyers
-          </Link>
-          <Link
-            href="/vendor/dashboard"
-            className={cn(
               buttonVariants({ variant: "outline", size: "lg" }),
               "hidden sm:inline-flex"
             )}
           >
-            Supplier Dashboard
+            Log In
           </Link>
           <Link
             href="/become-a-supplier"

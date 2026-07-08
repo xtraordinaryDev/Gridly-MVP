@@ -209,6 +209,156 @@ function seedMockStore(): MockStore {
       publishedAt: "2026-05-27T10:00:00Z",
     },
     {
+      id: "rfp-airport-msp",
+      buyerId: "buyer-ext-msp",
+      buyerName: "MSP Airport Commission",
+      title: "Jet Fuel & Ground Fleet Diesel — FY27",
+      description:
+        "Annual jet fuel supply plus diesel for ground support equipment at Terminals 1 and 2.",
+      fuelType: "Jet Fuel",
+      quantityGallons: 5_600_000,
+      recurrence: "recurring",
+      urgency: "standard",
+      deliveryStates: ["Minnesota"],
+      deliveryAddresses: ["4300 Glumack Dr, St. Paul, MN 55111"],
+      deliveryDates: ["2026-08-01"],
+      requiredCapabilities: ["Provide delivery tickets within 24 hours"],
+      requiredCertifications: [],
+      insuranceRequirements: "$5M general liability",
+      bidDueDate: "2026-07-18T23:59:00Z",
+      decisionDate: "2026-07-25T23:59:00Z",
+      expectedAwardDate: "2026-08-01T23:59:00Z",
+      status: "published",
+      awardedVendorId: null,
+      createdAt: "2026-06-28T09:00:00Z",
+      publishedAt: "2026-06-28T09:00:00Z",
+    },
+    {
+      id: "rfp-hospital-network",
+      buyerId: "buyer-ext-mercy",
+      buyerName: "Mercy Health Network",
+      title: "Backup Generator Diesel — 14 Hospital Campuses",
+      description:
+        "Standing contract for generator diesel with quarterly top-offs and 4-hour emergency response requirement.",
+      fuelType: "Diesel",
+      quantityGallons: 480_000,
+      recurrence: "recurring",
+      urgency: "standard",
+      deliveryStates: ["Illinois", "Wisconsin"],
+      deliveryAddresses: ["Multiple campuses — list provided on award"],
+      deliveryDates: ["2026-08-15"],
+      requiredCapabilities: ["Wet-hose/Mobile Refueling"],
+      requiredCertifications: [],
+      insuranceRequirements: "$2M general liability, $1M auto",
+      bidDueDate: "2026-07-22T23:59:00Z",
+      decisionDate: "2026-07-29T23:59:00Z",
+      expectedAwardDate: "2026-08-10T23:59:00Z",
+      status: "published",
+      awardedVendorId: null,
+      createdAt: "2026-06-30T14:00:00Z",
+      publishedAt: "2026-06-30T14:00:00Z",
+    },
+    {
+      id: "rfp-agco-harvest",
+      buyerId: "buyer-ext-agco",
+      buyerName: "Heartland Grain Cooperative",
+      title: "Harvest Season Dyed Diesel — 22 Elevator Sites",
+      description:
+        "Dyed diesel for grain dryers and farm equipment across Iowa and southern Minnesota elevators, September through November.",
+      fuelType: "Dyed Diesel",
+      quantityGallons: 1_150_000,
+      recurrence: "one_time",
+      urgency: "standard",
+      deliveryStates: ["Iowa", "Minnesota"],
+      deliveryAddresses: ["Site list attached to RFP packet"],
+      deliveryDates: ["2026-09-05", "2026-10-05", "2026-11-05"],
+      requiredCapabilities: ["Install Tank Monitors"],
+      requiredCertifications: [],
+      insuranceRequirements: null,
+      bidDueDate: "2026-07-30T23:59:00Z",
+      decisionDate: "2026-08-08T23:59:00Z",
+      expectedAwardDate: "2026-08-20T23:59:00Z",
+      status: "published",
+      awardedVendorId: null,
+      createdAt: "2026-07-01T10:00:00Z",
+      publishedAt: "2026-07-01T10:00:00Z",
+    },
+    {
+      id: "rfp-logistics-defrun",
+      buyerId: "buyer-ext-tlx",
+      buyerName: "TransLoad Express",
+      title: "DEF Supply — Regional Distribution Hubs",
+      description:
+        "Bulk DEF for five Midwest distribution hubs with tank monitoring preferred.",
+      fuelType: "DEF",
+      quantityGallons: 260_000,
+      recurrence: "recurring",
+      urgency: "standard",
+      deliveryStates: ["Illinois", "Indiana", "Missouri"],
+      deliveryAddresses: ["Hub addresses shared post-NDA"],
+      deliveryDates: ["2026-08-01"],
+      requiredCapabilities: [],
+      requiredCertifications: ["DBE"],
+      insuranceRequirements: null,
+      bidDueDate: "2026-07-25T23:59:00Z",
+      decisionDate: "2026-08-01T23:59:00Z",
+      expectedAwardDate: "2026-08-15T23:59:00Z",
+      status: "published",
+      awardedVendorId: null,
+      createdAt: "2026-07-02T08:30:00Z",
+      publishedAt: "2026-07-02T08:30:00Z",
+    },
+    {
+      id: "rfp-county-roads",
+      buyerId: "buyer-ext-dane",
+      buyerName: "Dane County Public Works",
+      title: "Winter Ops Diesel & Heating Oil Pre-Buy",
+      description:
+        "Pre-season purchase of diesel for plow fleet and heating oil for county garages ahead of winter operations.",
+      fuelType: "Diesel",
+      quantityGallons: 780_000,
+      recurrence: "one_time",
+      urgency: "standard",
+      deliveryStates: ["Wisconsin"],
+      deliveryAddresses: ["1919 Alliant Energy Center Way, Madison, WI"],
+      deliveryDates: ["2026-10-01"],
+      requiredCapabilities: [],
+      requiredCertifications: [],
+      insuranceRequirements: "$1M general liability",
+      bidDueDate: "2026-08-05T23:59:00Z",
+      decisionDate: "2026-08-14T23:59:00Z",
+      expectedAwardDate: "2026-09-01T23:59:00Z",
+      status: "published",
+      awardedVendorId: null,
+      createdAt: "2026-07-03T11:15:00Z",
+      publishedAt: "2026-07-03T11:15:00Z",
+    },
+    {
+      id: "rfp-utility-rush",
+      buyerId: "buyer-ext-nsp",
+      buyerName: "Northern States Power",
+      title: "RUSH: Peaker Plant Fuel Oil — July Heat Event",
+      description:
+        "Expedited fuel oil delivery for peaker plants ahead of forecast July heat wave. 72-hour mobilization window.",
+      fuelType: "Heating Oil",
+      quantityGallons: 420_000,
+      recurrence: "one_time",
+      urgency: "rush",
+      deliveryStates: ["Minnesota"],
+      deliveryAddresses: ["Black Dog Generating Plant, Burnsville, MN"],
+      deliveryDates: ["2026-07-14"],
+      requiredCapabilities: ["Wet-hose/Mobile Refueling"],
+      requiredCertifications: [],
+      insuranceRequirements: "$2M GL minimum",
+      bidDueDate: "2026-07-10T23:59:00Z",
+      decisionDate: "2026-07-11T23:59:00Z",
+      expectedAwardDate: "2026-07-12T23:59:00Z",
+      status: "published",
+      awardedVendorId: null,
+      createdAt: "2026-07-05T07:45:00Z",
+      publishedAt: "2026-07-05T07:45:00Z",
+    },
+    {
       id: "rfp-draft-demo",
       buyerId: PREVIEW_BUYER_ID,
       buyerName: "Metro Transit Authority",
@@ -243,6 +393,12 @@ function seedMockStore(): MockStore {
     { id: "inv-6", rfpId: "rfp-emergency", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-05-29T08:00:00Z", viewedAt: "2026-05-29T09:05:00Z", respondedAt: null, declinedAt: null },
     { id: "inv-7", rfpId: "rfp-schooldist", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-05-20T10:00:00Z", viewedAt: "2026-05-21T10:00:00Z", respondedAt: "2026-05-30T15:20:00Z", declinedAt: null },
     { id: "inv-8", rfpId: "rfp-portauth", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-05-27T10:00:00Z", viewedAt: null, respondedAt: null, declinedAt: null },
+    { id: "inv-9", rfpId: "rfp-airport-msp", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-06-28T09:00:00Z", viewedAt: "2026-06-29T08:15:00Z", respondedAt: null, declinedAt: null },
+    { id: "inv-10", rfpId: "rfp-hospital-network", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-06-30T14:00:00Z", viewedAt: null, respondedAt: null, declinedAt: null },
+    { id: "inv-11", rfpId: "rfp-agco-harvest", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-07-01T10:00:00Z", viewedAt: null, respondedAt: null, declinedAt: null },
+    { id: "inv-12", rfpId: "rfp-logistics-defrun", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-07-02T08:30:00Z", viewedAt: "2026-07-03T09:00:00Z", respondedAt: null, declinedAt: null },
+    { id: "inv-13", rfpId: "rfp-county-roads", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-07-03T11:15:00Z", viewedAt: null, respondedAt: null, declinedAt: null },
+    { id: "inv-14", rfpId: "rfp-utility-rush", vendorId: PREVIEW_VENDOR_ID, invitedAt: "2026-07-05T07:45:00Z", viewedAt: null, respondedAt: null, declinedAt: null },
   ]
 
   const responses: MockResponse[] = [
@@ -383,7 +539,11 @@ export async function listBuyerRfps(buyerId: string): Promise<BuyerRfpListItem[]
   if (!isSupabaseConfigured()) {
     const store = getMockStore()
     return store.rfps
-      .filter((r) => r.buyerId === buyerId || buyerId === PREVIEW_BUYER_ID)
+      .filter(
+        (r) =>
+          r.buyerId === buyerId ||
+          (buyerId === PREVIEW_BUYER_ID && r.buyerId === PREVIEW_BUYER_ID)
+      )
       .map((r) => {
         const invs = store.invitations.filter((i) => i.rfpId === r.id)
         const resps = store.responses.filter((x) => x.rfpId === r.id)
@@ -626,6 +786,81 @@ export async function getBuyerRfpDetail(
 }
 
 // ---------------------------------------------------------------------------
+// Admin accessors
+// ---------------------------------------------------------------------------
+export interface AdminRfpListItem {
+  id: string
+  title: string
+  buyerName: string
+  fuelType: string
+  quantityGallons: number
+  deliveryStates: string[]
+  urgency: "standard" | "rush" | "emergency"
+  status: RfpStatus
+  invitedCount: number
+  responseCount: number
+  bidDueDate: string | null
+  createdAt: string
+}
+
+/** All RFPs across every buyer — for the GridLink operations console. */
+export async function listAllRfps(): Promise<AdminRfpListItem[]> {
+  if (!isSupabaseConfigured()) {
+    const store = getMockStore()
+    return store.rfps
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        buyerName: r.buyerName,
+        fuelType: r.fuelType,
+        quantityGallons: r.quantityGallons,
+        deliveryStates: r.deliveryStates,
+        urgency: r.urgency,
+        status: r.status,
+        invitedCount: store.invitations.filter((i) => i.rfpId === r.id).length,
+        responseCount: store.responses.filter((x) => x.rfpId === r.id).length,
+        bidDueDate: r.bidDueDate,
+        createdAt: r.createdAt,
+      }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }
+
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from("rfps")
+    .select("*, rfp_invitations(id), rfp_responses(id)")
+    .order("created_at", { ascending: false })
+
+  const buyerIds = [...new Set((data ?? []).map((r) => r.buyer_id as string))]
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id, company_name")
+    .in("id", buyerIds)
+  const buyerNames = new Map(
+    (profiles ?? []).map((p) => [p.id as string, (p.company_name as string) ?? "Buyer"])
+  )
+
+  return (data ?? []).map((row) => {
+    const inv = row.rfp_invitations as { id: string }[] | null
+    const res = row.rfp_responses as { id: string }[] | null
+    return {
+      id: row.id as string,
+      title: row.title as string,
+      buyerName: buyerNames.get(row.buyer_id as string) ?? "Buyer",
+      fuelType: (row.fuel_type as string) ?? "",
+      quantityGallons: Number(row.quantity_gallons) || 0,
+      deliveryStates: (row.delivery_states as string[]) ?? [],
+      urgency: ((row.urgency as string) ?? "standard") as "standard" | "rush" | "emergency",
+      status: row.status as RfpStatus,
+      invitedCount: inv?.length ?? 0,
+      responseCount: res?.length ?? 0,
+      bidDueDate: (row.bid_due_date as string) ?? null,
+      createdAt: row.created_at as string,
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Mutations (buyer)
 // ---------------------------------------------------------------------------
 export async function saveRfpFromWizard(
@@ -854,9 +1089,7 @@ export async function listVendorOpportunities(
 ): Promise<VendorOpportunityListItem[]> {
   if (!isSupabaseConfigured()) {
     const store = getMockStore()
-    const invs = store.invitations.filter(
-      (i) => i.vendorId === vendorId || vendorId === PREVIEW_VENDOR_ID
-    )
+    const invs = store.invitations.filter((i) => i.vendorId === vendorId)
     const items: VendorOpportunityListItem[] = []
     for (const inv of invs) {
       const rfp = store.rfps.find((r) => r.id === inv.rfpId && r.status === "published")

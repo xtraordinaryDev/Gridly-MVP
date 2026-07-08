@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Building2, ShieldCheck } from "lucide-react"
+import { Award, Building2, ShieldCheck } from "lucide-react"
 
 import type { DirectoryVendor } from "@/lib/directory/shared"
 import { Badge } from "@/components/ui/badge"
@@ -26,10 +26,18 @@ export function VendorCard({ vendor }: { vendor: DirectoryVendor }) {
           </span>
           <div className="min-w-0 flex-1">
             <h3 className="truncate font-semibold text-navy">{vendor.companyName}</h3>
-            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald/15 px-2 py-0.5 text-xs font-medium text-emerald">
-              <ShieldCheck className="size-3" />
-              GridLink Verified
-            </span>
+            <div className="mt-1 flex flex-wrap gap-1">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald/15 px-2 py-0.5 text-xs font-medium text-emerald">
+                <ShieldCheck className="size-3" />
+                GridLink Verified
+              </span>
+              {vendor.specialCertification ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-blue/10 px-2 py-0.5 text-xs font-medium text-brand-blue">
+                  <Award className="size-3" />
+                  {vendor.specialCertification}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
 

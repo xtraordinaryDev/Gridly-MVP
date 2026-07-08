@@ -1,27 +1,8 @@
 "use client"
 
-import Link from "next/link"
-import { ChevronDown, ExternalLink, LogOut, ShieldCheck, UserRound } from "lucide-react"
+import { ShieldCheck } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase()
-}
+import { UserMenu } from "@/components/user-menu"
 
 export function VendorTopbar({
   companyName,
@@ -51,36 +32,7 @@ export function VendorTopbar({
         ) : null}
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 text-sm outline-none transition-colors hover:bg-muted">
-          <Avatar className="size-8">
-            <AvatarFallback className="bg-navy text-xs font-semibold text-navy-foreground">
-              {initials(name)}
-            </AvatarFallback>
-          </Avatar>
-          <span className="hidden font-medium text-foreground sm:inline">{name}</span>
-          <ChevronDown className="size-4 text-muted-foreground" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuLabel className="flex items-center gap-2">
-            <UserRound className="size-4 text-muted-foreground" />
-            <span className="truncate">{name}</span>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem render={<Link href="/vendor/settings" />}>
-            <UserRound className="size-4" />
-            Settings
-          </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/" />}>
-            <ExternalLink className="size-4" />
-            View site
-          </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/login" />}>
-            <LogOut className="size-4" />
-            Sign out
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <UserMenu name={name} companyName={companyName} settingsHref="/vendor/settings" />
     </header>
   )
 }
