@@ -13,6 +13,12 @@
 import { createClient } from "@supabase/supabase-js"
 import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
+import ws from "ws"
+
+// Node < 22 has no native WebSocket; supabase-js realtime needs one at init.
+if (typeof globalThis.WebSocket === "undefined") {
+  ;(globalThis as Record<string, unknown>).WebSocket = ws
+}
 
 import { DEMO_PASSWORD } from "./seed-demo-data"
 
