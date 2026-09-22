@@ -4,6 +4,9 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   Bookmark,
+  Handshake,
+  Truck,
+  Receipt,
   FileStack,
   LayoutDashboard,
   Search,
@@ -18,6 +21,9 @@ const NAV = [
   { label: "Verified Directory", href: "/buyer/directory", icon: Search },
   { label: "My RFPs", href: "/buyer/rfps", icon: FileStack },
   { label: "Saved Suppliers", href: "/buyer/saved", icon: Bookmark },
+  { label: "Contracts", href: "/buyer/contracts", icon: Handshake },
+  { label: "Orders", href: "/buyer/orders", icon: Truck },
+  { label: "Invoices", href: "/buyer/invoices", icon: Receipt },
   { label: "Settings", href: "/buyer/settings", icon: Settings },
 ]
 

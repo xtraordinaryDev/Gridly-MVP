@@ -6,6 +6,11 @@ import { format } from "date-fns"
 import type { BuyerRfpDetail } from "@/lib/rfp/types"
 import { RfpStatusBadge } from "@/components/buyer/rfp-status-badge"
 import { RfpComparisonTable } from "@/components/buyer/rfp-comparison-table"
+import { RfpLifecycleActions } from "@/components/buyer/rfp-lifecycle-actions"
+import { AttachmentList } from "@/components/attachments"
+import { RfpQandA } from "@/components/messages/message-thread"
+import type { MessageView, ThreadParty } from "@/lib/data/messages"
+import type { VendorPerformance } from "@/lib/data/ratings"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -30,8 +35,18 @@ const INVITE_STATUS: Record<string, string> = {
   declined: "bg-destructive/10 text-destructive",
 }
 
-export function RfpDetailView({ rfp }: { rfp: BuyerRfpDetail }) {
-  const canAward = rfp.status === "published"
+export function RfpDetailView({
+  rfp,
+  defaultTab = "overview",
+  qa,
+  performance,
+}: {
+  rfp: BuyerRfpDetail
+  defaultTab?: string
+  qa?: { parties: ThreadParty[]; activeVendorId: string | null; messages: MessageView[] }
+  performance?: Record<string, VendorPerformance>
+}) {
+  const canAward = rfp.status === "published" || rfp.status === "closed"
 
   return (
     <div className="space-y-6">
@@ -61,6 +76,10 @@ export function RfpDetailView({ rfp }: { rfp: BuyerRfpDetail }) {
               <dd className="font-medium">{formatDt(rfp.bidDueDate)}</dd>
             </div>
             <div>
+              <dt className="text-xs text-muted-foreground">Pricing</dt>
+              <dd className="font-medium">{rfp.pricingMode === "index" ? `Index + diff · ${rfp.indexName ?? ""}` : "Fixed $/gal"}</dd>
+            </div>
+            <div>
               <dt className="text-xs text-muted-foreground">Invited / Responses</dt>
               <dd className="font-medium">
                 {rfp.invitations.length} / {rfp.responses.length}
@@ -73,18 +92,21 @@ export function RfpDetailView({ rfp }: { rfp: BuyerRfpDetail }) {
               </div>
             ) : null}
           </dl>
+          <div className="w-full border-t border-border pt-4">
+            <RfpLifecycleActions rfp={rfp} />
+          </div>
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue={defaultTab}>
         <TabsList variant="line" className="h-auto w-full flex-wrap justify-start border-b bg-transparent p-0">
-          {["overview", "invited", "responses", "activity"].map((tab) => (
+          {["overview", "invited", "responses", "qa", "activity"].map((tab) => (
             <TabsTrigger
               key={tab}
               value={tab}
               className="rounded-none border-b-2 border-transparent px-4 py-3 capitalize data-active:border-brand-blue data-active:bg-transparent"
             >
-              {tab === "invited" ? "Invited Suppliers" : tab}
+              {tab === "invited" ? "Invited Suppliers" : tab === "qa" ? `Q&A${qa?.parties.reduce((n, p) => n + p.unread, 0) ? " •" : ""}` : tab}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -109,12 +131,30 @@ export function RfpDetailView({ rfp }: { rfp: BuyerRfpDetail }) {
             </div>
           </dl>
           <div>
-            <h3 className="text-sm font-semibold text-navy">Delivery addresses</h3>
-            <ul className="mt-2 list-inside list-disc text-sm text-muted-foreground">
-              {rfp.deliveryAddresses.map((a) => (
-                <li key={a}>{a}</li>
-              ))}
-            </ul>
+            <h3 className="text-sm font-semibold text-navy">Delivery sites</h3>
+            <div className="mt-2 overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr><th className="px-3 py-2 text-left font-medium">Site</th><th className="px-3 py-2 text-right font-medium">Gallons</th><th className="px-3 py-2 text-right font-medium">Tank</th><th className="px-3 py-2 text-left font-medium">Window</th></tr>
+                </thead>
+                <tbody>
+                  {rfp.deliverySites.map((site, i) => (
+                    <tr key={i} className="border-t border-border">
+                      <td className="px-3 py-2">{site.address}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{site.gallons ? site.gallons.toLocaleString() : "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{site.tankSizeGallons ? site.tankSizeGallons.toLocaleString() : "—"}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{site.deliveryWindow ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {rfp.attachments.length ? (
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-navy">Attachments</h3>
+                <AttachmentList attachments={rfp.attachments} className="mt-2" />
+              </div>
+            ) : null}
           </div>
           {rfp.requiredCapabilities.length > 0 ? (
             <div>
@@ -179,7 +219,15 @@ export function RfpDetailView({ rfp }: { rfp: BuyerRfpDetail }) {
         </TabsContent>
 
         <TabsContent value="responses" className="mt-6">
-          <RfpComparisonTable rfp={rfp} canAward={canAward} />
+          <RfpComparisonTable rfp={rfp} canAward={canAward} performance={performance} />
+        </TabsContent>
+
+        <TabsContent value="qa" className="mt-6">
+          {qa ? (
+            <RfpQandA rfpId={rfp.id} parties={qa.parties} activeVendorId={qa.activeVendorId} messages={qa.messages} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Questions from invited suppliers will appear here.</p>
+          )}
         </TabsContent>
 
         <TabsContent value="activity" className="mt-6">

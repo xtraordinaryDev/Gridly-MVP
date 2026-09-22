@@ -1,7 +1,21 @@
-export type RfpStatus = "draft" | "published" | "closed" | "awarded"
+export type RfpStatus = "draft" | "published" | "closed" | "awarded" | "cancelled"
 export type InvitationStatus = "invited" | "viewed" | "responded" | "declined"
 export type RfpRecurrence = "one_time" | "recurring"
 export type RfpUrgency = "standard" | "rush" | "emergency"
+export type PricingMode = "fixed" | "index"
+
+export interface DeliverySiteView {
+  address: string
+  gallons: number | null
+  tankSizeGallons: number | null
+  deliveryWindow: string | null
+}
+
+export interface AttachmentView {
+  name: string
+  path: string
+  size: number
+}
 
 export interface BuyerRfpListItem {
   id: string
@@ -29,6 +43,11 @@ export interface RfpResponseView {
   id: string
   vendorId: string
   companyName: string
+  pricingMode: PricingMode
+  indexName: string | null
+  differential: number | null
+  attachmentName: string | null
+  attachmentPath: string | null
   pricePerGallon: number
   totalPrice: number
   deliveryTerms: string
@@ -55,6 +74,10 @@ export interface BuyerRfpDetail {
   urgency: RfpUrgency
   deliveryStates: string[]
   deliveryAddresses: string[]
+  deliverySites: DeliverySiteView[]
+  attachments: AttachmentView[]
+  pricingMode: PricingMode
+  indexName: string | null
   deliveryDates: string[]
   requiredCapabilities: string[]
   requiredCertifications: string[]
@@ -83,6 +106,8 @@ export interface VendorOpportunityListItem {
   dueDate: string
   status: InvitationStatus
   urgency: RfpUrgency
+  rfpStatus: RfpStatus
+  biddingOpen: boolean
 }
 
 export interface VendorOpportunityDetail {
@@ -95,6 +120,10 @@ export interface VendorOpportunityDetail {
   quantityGallons: number
   deliveryStates: string[]
   deliveryAddresses: string[]
+  deliverySites: DeliverySiteView[]
+  attachments: AttachmentView[]
+  pricingMode: PricingMode
+  indexName: string | null
   deliveryDates: string[]
   requiredCapabilities: string[]
   requiredCertifications: string[]
@@ -103,4 +132,7 @@ export interface VendorOpportunityDetail {
   status: InvitationStatus
   urgency: RfpUrgency
   existingResponse: RfpResponseView | null
+  rfpStatus: RfpStatus
+  biddingOpen: boolean
+  withdrawn: boolean
 }

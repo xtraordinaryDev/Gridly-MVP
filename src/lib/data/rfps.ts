@@ -3,7 +3,10 @@ import "server-only"
 import type { RfpWizardInput } from "@/lib/schemas/rfp-wizard"
 import type { RfpBidInput } from "@/lib/schemas/rfp-wizard"
 import type {
+  AttachmentView,
   BuyerRfpDetail,
+  DeliverySiteView,
+  PricingMode,
   BuyerRfpListItem,
   InvitationStatus,
   RfpActivityItem,
@@ -17,6 +20,7 @@ import { listVerifiedVendors } from "@/lib/data/directory"
 import { matchVerifiedSuppliers } from "@/lib/rfp/match-suppliers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { createContractForAward } from "@/lib/data/invoices"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import {
   sendBidSubmittedEmail,
@@ -51,6 +55,10 @@ interface MockRfp {
   awardedVendorId: string | null
   createdAt: string
   publishedAt: string | null
+  pricingMode?: PricingMode
+  indexName?: string | null
+  deliverySites?: DeliverySiteView[]
+  attachments?: AttachmentView[]
 }
 
 interface MockInvitation {
@@ -67,6 +75,11 @@ interface MockResponse {
   id: string
   rfpId: string
   vendorId: string
+  pricingMode?: PricingMode
+  indexName?: string | null
+  differential?: number | null
+  attachmentName?: string | null
+  attachmentPath?: string | null
   pricePerGallon: number
   totalPrice: number
   deliveryTerms: string
@@ -461,6 +474,57 @@ async function vendorName(vendorId: string): Promise<string> {
   return name
 }
 
+function sitesFrom(raw: unknown, addresses: string[]): DeliverySiteView[] {
+  const arr = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []
+  if (arr.length) {
+    return arr.map((x) => ({
+      address: String(x.address ?? ""),
+      gallons: x.gallons == null ? null : Number(x.gallons),
+      tankSizeGallons: x.tankSizeGallons == null ? null : Number(x.tankSizeGallons),
+      deliveryWindow: x.deliveryWindow ? String(x.deliveryWindow) : null,
+    }))
+  }
+  return addresses.map((address) => ({ address, gallons: null, tankSizeGallons: null, deliveryWindow: null }))
+}
+
+function attachmentsFrom(raw: unknown): AttachmentView[] {
+  const arr = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []
+  return arr.filter((x) => x && x.path).map((x) => ({ name: String(x.name ?? "Attachment"), path: String(x.path), size: Number(x.size) || 0 }))
+}
+
+function responsePricing(r: Record<string, unknown>) {
+  return {
+    pricingMode: ((r.pricing_mode as string) ?? (r.pricingMode as string) ?? "fixed") as PricingMode,
+    indexName: ((r.index_name as string) ?? (r.indexName as string) ?? null) || null,
+    differential: r.differential == null ? null : Number(r.differential),
+    attachmentName: ((r.attachment_name as string) ?? (r.attachmentName as string) ?? null) || null,
+    attachmentPath: ((r.attachment_path as string) ?? (r.attachmentPath as string) ?? null) || null,
+  }
+}
+
+function biddingOpen(status: RfpStatus, bidDueDate: string | null | undefined): boolean {
+  if (status !== "published") return false
+  if (!bidDueDate) return true
+  return new Date(bidDueDate).getTime() >= Date.now()
+}
+
+/**
+ * Lazily flip published RFPs whose bid due date has passed to "closed".
+ * Runs on reads so no scheduler is needed.
+ */
+export async function autoCloseExpiredRfps(buyerId?: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    const store = getMockStore()
+    for (const r of store.rfps) {
+      if (r.status === "published" && r.bidDueDate && new Date(r.bidDueDate).getTime() < Date.now() && (!buyerId || r.buyerId === buyerId)) r.status = "closed"
+    }
+    return
+  }
+  let q = createAdminClient().from("rfps").update({ status: "closed" }).eq("status", "published").lt("bid_due_date", new Date().toISOString())
+  if (buyerId) q = q.eq("buyer_id", buyerId)
+  await q
+}
+
 function invitationStatus(inv: MockInvitation): InvitationStatus {
   if (inv.declinedAt) return "declined"
   if (inv.respondedAt) return "responded"
@@ -532,10 +596,27 @@ function buildActivity(
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
+/**
+ * Buyer company names keyed by profile id. Uses the service role because RLS
+ * only lets a vendor read their own profile row.
+ */
+async function buyerCompanyNames(buyerIds: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(buyerIds.filter(Boolean))]
+  if (!ids.length) return new Map()
+  const { data } = await createAdminClient()
+    .from("profiles")
+    .select("id, company_name")
+    .in("id", ids)
+  return new Map(
+    (data ?? []).map((p) => [p.id as string, (p.company_name as string) || "Buyer"])
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Buyer accessors
 // ---------------------------------------------------------------------------
 export async function listBuyerRfps(buyerId: string): Promise<BuyerRfpListItem[]> {
+  await autoCloseExpiredRfps(buyerId)
   if (!isSupabaseConfigured()) {
     const store = getMockStore()
     return store.rfps
@@ -546,7 +627,7 @@ export async function listBuyerRfps(buyerId: string): Promise<BuyerRfpListItem[]
       )
       .map((r) => {
         const invs = store.invitations.filter((i) => i.rfpId === r.id)
-        const resps = store.responses.filter((x) => x.rfpId === r.id)
+        const resps = store.responses.filter((x) => x.rfpId === r.id && x.status === "submitted")
         return {
           id: r.id,
           title: r.title,
@@ -565,13 +646,13 @@ export async function listBuyerRfps(buyerId: string): Promise<BuyerRfpListItem[]
   const supabase = await createClient()
   const { data } = await supabase
     .from("rfps")
-    .select("*, rfp_invitations(id), rfp_responses(id)")
+    .select("*, rfp_invitations(id), rfp_responses(id, status)")
     .eq("buyer_id", buyerId)
     .order("created_at", { ascending: false })
 
   return (data ?? []).map((row) => {
     const inv = row.rfp_invitations as { id: string }[] | null
-    const res = row.rfp_responses as { id: string }[] | null
+    const res = ((row.rfp_responses as { id: string; status: string }[] | null) ?? []).filter((r) => r.status === "submitted")
     return {
       id: row.id as string,
       title: row.title as string,
@@ -590,6 +671,7 @@ export async function getBuyerRfpDetail(
   rfpId: string,
   buyerId: string
 ): Promise<BuyerRfpDetail | null> {
+  await autoCloseExpiredRfps(buyerId)
   if (!isSupabaseConfigured()) {
     const store = getMockStore()
     const rfp = store.rfps.find(
@@ -598,7 +680,7 @@ export async function getBuyerRfpDetail(
     if (!rfp) return null
 
     const invs = store.invitations.filter((i) => i.rfpId === rfpId)
-    const resps = store.responses.filter((x) => x.rfpId === rfpId)
+    const resps = store.responses.filter((x) => x.rfpId === rfpId && x.status === "submitted")
 
     const invitations: RfpInvitationView[] = await Promise.all(
       invs.map(async (inv) => ({
@@ -617,6 +699,7 @@ export async function getBuyerRfpDetail(
         id: r.id,
         vendorId: r.vendorId,
         companyName: await vendorName(r.vendorId),
+        ...responsePricing(r as unknown as Record<string, unknown>),
         pricePerGallon: r.pricePerGallon,
         totalPrice: r.totalPrice,
         deliveryTerms: r.deliveryTerms,
@@ -641,6 +724,10 @@ export async function getBuyerRfpDetail(
       urgency: rfp.urgency,
       deliveryStates: rfp.deliveryStates,
       deliveryAddresses: rfp.deliveryAddresses,
+      deliverySites: sitesFrom(rfp.deliverySites, rfp.deliveryAddresses),
+      attachments: rfp.attachments ?? [],
+      pricingMode: rfp.pricingMode ?? "fixed",
+      indexName: rfp.indexName ?? null,
       deliveryDates: rfp.deliveryDates,
       requiredCapabilities: rfp.requiredCapabilities,
       requiredCertifications: rfp.requiredCertifications,
@@ -671,7 +758,7 @@ export async function getBuyerRfpDetail(
 
   const [{ data: invRows }, { data: respRows }] = await Promise.all([
     supabase.from("rfp_invitations").select("*").eq("rfp_id", rfpId),
-    supabase.from("rfp_responses").select("*").eq("rfp_id", rfpId),
+    supabase.from("rfp_responses").select("*").eq("rfp_id", rfpId).eq("status", "submitted"),
   ])
 
   const invitations: RfpInvitationView[] = await Promise.all(
@@ -698,6 +785,7 @@ export async function getBuyerRfpDetail(
     (respRows ?? []).map(async (r) => ({
       id: r.id as string,
       vendorId: r.vendor_id as string,
+      ...responsePricing(r as Record<string, unknown>),
       companyName: await vendorName(r.vendor_id as string),
       pricePerGallon: Number(r.price_per_gallon),
       totalPrice: Number(r.total_price),
@@ -721,6 +809,10 @@ export async function getBuyerRfpDetail(
     urgency: ((rfp.urgency as string) ?? "standard") as "standard" | "rush" | "emergency",
     deliveryStates: (rfp.delivery_states as string[]) ?? [],
     deliveryAddresses: (rfp.delivery_addresses as string[]) ?? [],
+    deliverySites: sitesFrom(rfp.delivery_sites, (rfp.delivery_addresses as string[]) ?? []),
+    attachments: attachmentsFrom(rfp.attachments),
+    pricingMode: ((rfp.pricing_mode as string) ?? "fixed") as PricingMode,
+    indexName: (rfp.index_name as string) ?? null,
     deliveryDates: ((rfp.delivery_dates as string[]) ?? []).map(String),
     requiredCapabilities: (rfp.required_capabilities as string[]) ?? [],
     requiredCertifications: (rfp.required_certifications as string[]) ?? [],
@@ -867,7 +959,8 @@ export async function saveRfpFromWizard(
   buyerId: string,
   buyerName: string,
   input: RfpWizardInput,
-  publish: boolean
+  publish: boolean,
+  existingId?: string
 ): Promise<{ ok: true; rfpId: string } | { ok: false; message: string }> {
   const vendorIds =
     input.supplierInviteMode === "manual"
@@ -883,10 +976,16 @@ export async function saveRfpFromWizard(
   }
 
   const now = new Date().toISOString()
-  const rfpId = `rfp-${Date.now()}`
+  const rfpId = existingId ?? `rfp-${Date.now()}`
 
   if (!isSupabaseConfigured()) {
     const store = getMockStore()
+    if (existingId) {
+      const idx = store.rfps.findIndex((r) => r.id === existingId && r.buyerId === buyerId)
+      if (idx === -1 || store.rfps[idx].status !== "draft") return { ok: false, message: "Only drafts can be edited." }
+      store.rfps.splice(idx, 1)
+      store.invitations = store.invitations.filter((i) => i.rfpId !== existingId)
+    }
     store.rfps.push({
       id: rfpId,
       buyerId: PREVIEW_BUYER_ID,
@@ -910,6 +1009,10 @@ export async function saveRfpFromWizard(
       awardedVendorId: null,
       createdAt: now,
       publishedAt: publish ? now : null,
+      pricingMode: input.pricingMode,
+      indexName: input.indexName || null,
+      deliverySites: input.deliveryAddresses.map((a) => ({ address: a.address, gallons: a.gallons ?? null, tankSizeGallons: a.tankSizeGallons ?? null, deliveryWindow: a.deliveryWindow || null })),
+      attachments: input.attachments,
     })
 
     if (publish) {
@@ -944,9 +1047,7 @@ export async function saveRfpFromWizard(
   }
 
   const supabase = await createClient()
-  const { data: row, error } = await supabase
-    .from("rfps")
-    .insert({
+  const columns = {
       buyer_id: buyerId,
       title: input.title,
       description: input.description,
@@ -960,20 +1061,30 @@ export async function saveRfpFromWizard(
       required_capabilities: input.requiredCapabilities,
       required_certifications: input.requiredCertifications.filter((c) => c !== "None"),
       insurance_requirements: input.insuranceRequirements ?? null,
+      pricing_mode: input.pricingMode,
+      index_name: input.pricingMode === "index" ? input.indexName?.trim() || null : null,
+      delivery_sites: input.deliveryAddresses.map((a) => ({ address: a.address, gallons: a.gallons ?? null, tankSizeGallons: a.tankSizeGallons ?? null, deliveryWindow: a.deliveryWindow || null })),
+      attachments: input.attachments,
       bid_due_date: new Date(input.bidDueDate).toISOString(),
       decision_date: new Date(input.decisionDate).toISOString(),
       expected_award_date: new Date(input.expectedAwardDate).toISOString(),
       status: publish ? "published" : "draft",
       published_at: publish ? now : null,
-    })
-    .select("id")
-    .single()
-
-  if (error || !row) {
-    return { ok: false, message: "Could not save RFP." }
   }
 
-  const id = row.id as string
+  let id: string
+  if (existingId) {
+    const { data: existing } = await supabase.from("rfps").select("id, status").eq("id", existingId).eq("buyer_id", buyerId).maybeSingle()
+    if (!existing) return { ok: false, message: "RFP not found." }
+    if (existing.status !== "draft") return { ok: false, message: "Only drafts can be edited." }
+    const { error } = await supabase.from("rfps").update(columns).eq("id", existingId)
+    if (error) return { ok: false, message: "Could not save RFP." }
+    id = existingId
+  } else {
+    const { data: row, error } = await supabase.from("rfps").insert(columns).select("id").single()
+    if (error || !row) return { ok: false, message: "Could not save RFP." }
+    id = row.id as string
+  }
 
   // Notify the GridLink operator that an RFP was created (draft or published).
   await sendNewRfpNotification({
@@ -1017,6 +1128,89 @@ export async function saveRfpFromWizard(
   return { ok: true, rfpId: id }
 }
 
+// ---------------------------------------------------------------------------
+// RFP lifecycle (buyer)
+// ---------------------------------------------------------------------------
+type LifecycleResult = { ok: true; rfpId?: string } | { ok: false; message: string }
+
+async function loadOwnedRfp(buyerId: string, rfpId: string) {
+  const { data } = await createAdminClient().from("rfps").select("*").eq("id", rfpId).eq("buyer_id", buyerId).maybeSingle()
+  return data
+}
+
+export async function closeRfpBidding(buyerId: string, rfpId: string): Promise<LifecycleResult> {
+  if (!isSupabaseConfigured()) {
+    const r = getMockStore().rfps.find((x) => x.id === rfpId && x.buyerId === buyerId)
+    if (!r) return { ok: false, message: "RFP not found." }
+    if (r.status !== "published") return { ok: false, message: "Only published RFPs can be closed." }
+    r.status = "closed"
+    return { ok: true }
+  }
+  const rfp = await loadOwnedRfp(buyerId, rfpId)
+  if (!rfp) return { ok: false, message: "RFP not found." }
+  if (rfp.status !== "published") return { ok: false, message: "Only published RFPs can be closed." }
+  const { error } = await createAdminClient().from("rfps").update({ status: "closed" }).eq("id", rfpId)
+  return error ? { ok: false, message: "Couldn't close bidding." } : { ok: true }
+}
+
+export async function cancelRfp(buyerId: string, rfpId: string): Promise<LifecycleResult> {
+  if (!isSupabaseConfigured()) {
+    const r = getMockStore().rfps.find((x) => x.id === rfpId && x.buyerId === buyerId)
+    if (!r) return { ok: false, message: "RFP not found." }
+    if (r.status === "awarded") return { ok: false, message: "Awarded RFPs can't be cancelled." }
+    r.status = "cancelled"
+    return { ok: true }
+  }
+  const rfp = await loadOwnedRfp(buyerId, rfpId)
+  if (!rfp) return { ok: false, message: "RFP not found." }
+  if (rfp.status === "awarded") return { ok: false, message: "Awarded RFPs can't be cancelled." }
+  const { error } = await createAdminClient().from("rfps").update({ status: "cancelled" }).eq("id", rfpId)
+  return error ? { ok: false, message: "Couldn't cancel the RFP." } : { ok: true }
+}
+
+/** Extend (published) or re-open (closed) bidding with a new due date. */
+export async function extendRfpDeadline(buyerId: string, rfpId: string, newDueDate: string): Promise<LifecycleResult> {
+  const due = new Date(newDueDate + (newDueDate.length === 10 ? "T23:59:00Z" : ""))
+  if (Number.isNaN(due.getTime()) || due.getTime() < Date.now()) return { ok: false, message: "Pick a due date in the future." }
+  if (!isSupabaseConfigured()) {
+    const r = getMockStore().rfps.find((x) => x.id === rfpId && x.buyerId === buyerId)
+    if (!r) return { ok: false, message: "RFP not found." }
+    if (r.status !== "published" && r.status !== "closed") return { ok: false, message: "Only open or closed RFPs can be extended." }
+    r.status = "published"
+    r.bidDueDate = due.toISOString()
+    return { ok: true }
+  }
+  const rfp = await loadOwnedRfp(buyerId, rfpId)
+  if (!rfp) return { ok: false, message: "RFP not found." }
+  if (rfp.status !== "published" && rfp.status !== "closed") return { ok: false, message: "Only open or closed RFPs can be extended." }
+  const { error } = await createAdminClient().from("rfps").update({ status: "published", bid_due_date: due.toISOString() }).eq("id", rfpId)
+  return error ? { ok: false, message: "Couldn't update the deadline." } : { ok: true }
+}
+
+/** Copy an RFP into a new draft so the buyer can tweak and re-publish. */
+export async function duplicateRfp(buyerId: string, rfpId: string): Promise<LifecycleResult> {
+  if (!isSupabaseConfigured()) {
+    const store = getMockStore()
+    const r = store.rfps.find((x) => x.id === rfpId && x.buyerId === buyerId)
+    if (!r) return { ok: false, message: "RFP not found." }
+    const id = `rfp-${Date.now()}`
+    store.rfps.push({ ...r, id, title: `Copy of ${r.title}`, status: "draft", awardedVendorId: null, publishedAt: null, createdAt: new Date().toISOString(), bidDueDate: null, decisionDate: null, expectedAwardDate: null })
+    return { ok: true, rfpId: id }
+  }
+  const rfp = await loadOwnedRfp(buyerId, rfpId)
+  if (!rfp) return { ok: false, message: "RFP not found." }
+  const copy: Record<string, unknown> = { ...rfp }
+  for (const k of ["id", "created_at", "published_at", "awarded_vendor_id", "is_demo"]) delete copy[k]
+  copy.title = `Copy of ${rfp.title as string}`
+  copy.status = "draft"
+  copy.bid_due_date = null
+  copy.decision_date = null
+  copy.expected_award_date = null
+  const { data, error } = await createAdminClient().from("rfps").insert(copy).select("id").single()
+  if (error || !data) return { ok: false, message: "Couldn't duplicate the RFP." }
+  return { ok: true, rfpId: data.id as string }
+}
+
 export async function awardRfpContract(
   buyerId: string,
   rfpId: string,
@@ -1058,6 +1252,9 @@ export async function awardRfpContract(
 
   if (error) return { ok: false, message: "Could not award contract." }
 
+  // Awarding creates the contract that invoices hang off.
+  await createContractForAward({ rfpId, buyerId, vendorId })
+
   const { data: rfp } = await supabase.from("rfps").select("title").eq("id", rfpId).single()
   const { data: respRows } = await supabase.from("rfp_responses").select("vendor_id").eq("rfp_id", rfpId)
   const awardedName = await vendorName(vendorId)
@@ -1087,12 +1284,13 @@ export async function awardRfpContract(
 export async function listVendorOpportunities(
   vendorId: string
 ): Promise<VendorOpportunityListItem[]> {
+  await autoCloseExpiredRfps()
   if (!isSupabaseConfigured()) {
     const store = getMockStore()
     const invs = store.invitations.filter((i) => i.vendorId === vendorId)
     const items: VendorOpportunityListItem[] = []
     for (const inv of invs) {
-      const rfp = store.rfps.find((r) => r.id === inv.rfpId && r.status === "published")
+      const rfp = store.rfps.find((r) => r.id === inv.rfpId && ["published", "closed", "awarded"].includes(r.status))
       if (!rfp) continue
       items.push({
         id: rfp.id,
@@ -1105,6 +1303,8 @@ export async function listVendorOpportunities(
         dueDate: rfp.bidDueDate ?? rfp.createdAt,
         status: invitationStatus(inv),
         urgency: rfp.urgency,
+        rfpStatus: rfp.status,
+        biddingOpen: biddingOpen(rfp.status, rfp.bidDueDate),
       })
     }
     return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
@@ -1116,14 +1316,20 @@ export async function listVendorOpportunities(
     .select("*, rfps(*)")
     .eq("vendor_id", vendorId)
 
-  return (data ?? [])
-    .filter((row) => (row.rfps as { status: string })?.status === "published")
+  const published = (data ?? []).filter((row) =>
+    ["published", "closed", "awarded"].includes((row.rfps as { status: string })?.status)
+  )
+  const names = await buyerCompanyNames(
+    published.map((row) => (row.rfps as { buyer_id: string }).buyer_id)
+  )
+
+  return published
     .map((row) => {
       const rfp = row.rfps as Record<string, unknown>
       return {
         id: rfp.id as string,
         invitationId: row.id as string,
-        buyer: "Buyer",
+        buyer: names.get(rfp.buyer_id as string) ?? "Buyer",
         title: rfp.title as string,
         fuelType: (rfp.fuel_type as string) ?? "",
         quantityGallons: Number(rfp.quantity_gallons) || 0,
@@ -1139,6 +1345,8 @@ export async function listVendorOpportunities(
           declinedAt: (row.declined_at as string) ?? null,
         }),
         urgency: ((rfp.urgency as string) ?? "standard") as "standard" | "rush" | "emergency",
+        rfpStatus: rfp.status as RfpStatus,
+        biddingOpen: biddingOpen(rfp.status as RfpStatus, rfp.bid_due_date as string | null),
       }
     })
 }
@@ -1147,6 +1355,7 @@ export async function getVendorOpportunityDetail(
   vendorId: string,
   rfpId: string
 ): Promise<VendorOpportunityDetail | null> {
+  await autoCloseExpiredRfps()
   if (!isSupabaseConfigured()) {
     const store = getMockStore()
     const inv = store.invitations.find(
@@ -1162,11 +1371,12 @@ export async function getVendorOpportunityDetail(
     )
 
     let existingResponse: RfpResponseView | null = null
-    if (resp) {
+    if (resp && resp.status === "submitted") {
       existingResponse = {
         id: resp.id,
         vendorId: resp.vendorId,
         companyName: await vendorName(resp.vendorId),
+        ...responsePricing(resp as unknown as Record<string, unknown>),
         pricePerGallon: resp.pricePerGallon,
         totalPrice: resp.totalPrice,
         deliveryTerms: resp.deliveryTerms,
@@ -1187,6 +1397,10 @@ export async function getVendorOpportunityDetail(
       quantityGallons: rfp.quantityGallons,
       deliveryStates: rfp.deliveryStates,
       deliveryAddresses: rfp.deliveryAddresses,
+      deliverySites: sitesFrom(rfp.deliverySites, rfp.deliveryAddresses),
+      attachments: rfp.attachments ?? [],
+      pricingMode: rfp.pricingMode ?? "fixed",
+      indexName: rfp.indexName ?? null,
       deliveryDates: rfp.deliveryDates,
       requiredCapabilities: rfp.requiredCapabilities,
       requiredCertifications: rfp.requiredCertifications,
@@ -1195,6 +1409,9 @@ export async function getVendorOpportunityDetail(
       status: invitationStatus(inv),
       urgency: rfp.urgency,
       existingResponse,
+      rfpStatus: rfp.status,
+      biddingOpen: biddingOpen(rfp.status, rfp.bidDueDate),
+      withdrawn: !!resp && resp.status === "withdrawn",
     }
   }
 
@@ -1217,11 +1434,12 @@ export async function getVendorOpportunityDetail(
     .maybeSingle()
 
   let existingResponse: RfpResponseView | null = null
-  if (resp) {
+  if (resp && resp.status === "submitted") {
     existingResponse = {
       id: resp.id as string,
       vendorId,
       companyName: await vendorName(vendorId),
+      ...responsePricing(resp as Record<string, unknown>),
       pricePerGallon: Number(resp.price_per_gallon),
       totalPrice: Number(resp.total_price),
       deliveryTerms: (resp.delivery_terms as string) ?? "",
@@ -1235,13 +1453,17 @@ export async function getVendorOpportunityDetail(
   return {
     id: rfp.id as string,
     invitationId: inv.id as string,
-    buyer: "Buyer",
+    buyer: (await buyerCompanyNames([rfp.buyer_id as string])).get(rfp.buyer_id as string) ?? "Buyer",
     title: rfp.title as string,
     description: (rfp.description as string) ?? "",
     fuelType: (rfp.fuel_type as string) ?? "",
     quantityGallons: Number(rfp.quantity_gallons) || 0,
     deliveryStates: (rfp.delivery_states as string[]) ?? [],
     deliveryAddresses: (rfp.delivery_addresses as string[]) ?? [],
+    deliverySites: sitesFrom(rfp.delivery_sites, (rfp.delivery_addresses as string[]) ?? []),
+    attachments: attachmentsFrom(rfp.attachments),
+    pricingMode: ((rfp.pricing_mode as string) ?? "fixed") as PricingMode,
+    indexName: (rfp.index_name as string) ?? null,
     deliveryDates: ((rfp.delivery_dates as string[]) ?? []).map(String),
     requiredCapabilities: (rfp.required_capabilities as string[]) ?? [],
     requiredCertifications: (rfp.required_certifications as string[]) ?? [],
@@ -1258,6 +1480,9 @@ export async function getVendorOpportunityDetail(
     }),
     urgency: ((rfp.urgency as string) ?? "standard") as "standard" | "rush" | "emergency",
     existingResponse,
+    rfpStatus: rfp.status as RfpStatus,
+    biddingOpen: biddingOpen(rfp.status as RfpStatus, rfp.bid_due_date as string | null),
+    withdrawn: !!resp && resp.status === "withdrawn",
   }
 }
 
@@ -1284,6 +1509,13 @@ export async function markInvitationViewed(vendorId: string, rfpId: string) {
     .is("viewed_at", null)
 }
 
+/** Fixed bids carry $/gal directly; index bids store reference index + differential as the estimate. */
+function effectivePpg(input: RfpBidInput): number {
+  if (input.pricingMode === "index") return r4((input.referenceIndexPrice ?? 0) + (input.differential ?? 0))
+  return input.pricePerGallon ?? 0
+}
+const r4 = (n: number) => Math.round(n * 10000) / 10000
+
 export async function submitVendorBid(
   vendorId: string,
   rfpId: string,
@@ -1300,13 +1532,21 @@ export async function submitVendorBid(
     )
     if (!inv) return { ok: false, message: "Invitation not found." }
     if (inv.declinedAt) return { ok: false, message: "You declined this opportunity." }
+    const target = store.rfps.find((r) => r.id === rfpId)
+    if (!target || !biddingOpen(target.status, target.bidDueDate)) return { ok: false, message: "Bidding has closed for this RFP." }
 
     const vid = inv.vendorId
+    store.responses = store.responses.filter((r) => !(r.rfpId === rfpId && r.vendorId === vid))
     store.responses.push({
       id: `resp-${Date.now()}`,
       rfpId,
       vendorId: vid,
-      pricePerGallon: input.pricePerGallon,
+      pricingMode: input.pricingMode,
+      indexName: input.indexName || null,
+      differential: input.differential ?? null,
+      attachmentName: input.attachmentName || null,
+      attachmentPath: input.attachmentPath || null,
+      pricePerGallon: effectivePpg(input),
       totalPrice: input.totalPrice,
       deliveryTerms: input.deliveryTerms,
       validityDays: input.validityDays,
@@ -1326,10 +1566,18 @@ export async function submitVendorBid(
   }
 
   const supabase = await createClient()
+  const { data: target } = await supabase.from("rfps").select("status, bid_due_date").eq("id", rfpId).maybeSingle()
+  if (!target || !biddingOpen(target.status as RfpStatus, target.bid_due_date as string | null)) {
+    return { ok: false, message: "Bidding has closed for this RFP." }
+  }
   const { error } = await supabase.from("rfp_responses").upsert({
     rfp_id: rfpId,
     vendor_id: vendorId,
-    price_per_gallon: input.pricePerGallon,
+    pricing_mode: input.pricingMode,
+    index_name: input.pricingMode === "index" ? input.indexName?.trim() || null : null,
+    differential: input.pricingMode === "index" ? input.differential ?? null : null,
+    attachment_path: input.attachmentPath || null,
+    price_per_gallon: effectivePpg(input),
     total_price: input.totalPrice,
     delivery_terms: input.deliveryTerms,
     validity_days: input.validityDays,
@@ -1337,7 +1585,7 @@ export async function submitVendorBid(
     attachment_name: input.attachmentName ?? null,
     submitted_at: now,
     status: "submitted",
-  })
+  }, { onConflict: "rfp_id,vendor_id" })
 
   if (error) return { ok: false, message: "Could not submit bid." }
 
@@ -1347,6 +1595,37 @@ export async function submitVendorBid(
     .eq("rfp_id", rfpId)
     .eq("vendor_id", vendorId)
 
+  return { ok: true }
+}
+
+export async function withdrawVendorBid(
+  vendorId: string,
+  rfpId: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!isSupabaseConfigured()) {
+    const store = getMockStore()
+    const inv = store.invitations.find((i) => i.rfpId === rfpId && (i.vendorId === vendorId || vendorId === PREVIEW_VENDOR_ID))
+    const resp = inv && store.responses.find((r) => r.rfpId === rfpId && r.vendorId === inv.vendorId && r.status === "submitted")
+    if (!inv || !resp) return { ok: false, message: "No submitted bid to withdraw." }
+    const target = store.rfps.find((r) => r.id === rfpId)
+    if (!target || !biddingOpen(target.status, target.bidDueDate)) return { ok: false, message: "Bidding has closed, so the bid can't be withdrawn." }
+    resp.status = "withdrawn"
+    inv.respondedAt = null
+    return { ok: true }
+  }
+
+  const admin = createAdminClient()
+  const [{ data: target }, { data: resp }] = await Promise.all([
+    admin.from("rfps").select("status, bid_due_date").eq("id", rfpId).maybeSingle(),
+    admin.from("rfp_responses").select("id, status").eq("rfp_id", rfpId).eq("vendor_id", vendorId).maybeSingle(),
+  ])
+  if (!resp || resp.status !== "submitted") return { ok: false, message: "No submitted bid to withdraw." }
+  if (!target || !biddingOpen(target.status as RfpStatus, target.bid_due_date as string | null)) {
+    return { ok: false, message: "Bidding has closed, so the bid can't be withdrawn." }
+  }
+  const { error } = await admin.from("rfp_responses").update({ status: "withdrawn" }).eq("id", resp.id)
+  if (error) return { ok: false, message: "Couldn't withdraw the bid." }
+  await admin.from("rfp_invitations").update({ responded_at: null }).eq("rfp_id", rfpId).eq("vendor_id", vendorId)
   return { ok: true }
 }
 

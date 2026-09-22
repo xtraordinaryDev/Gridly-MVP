@@ -1,11 +1,14 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
+import { requireBuyer } from "@/lib/auth"
 import { listVerifiedVendors } from "@/lib/data/directory"
+import { listAddressOptions } from "@/lib/data/sites"
 import { RfpCreateWizard } from "@/components/buyer/rfp-create-wizard"
 
 export default async function CreateRfpPage() {
-  const vendors = await listVerifiedVendors()
+  const { profile, preview } = await requireBuyer()
+  const [vendors, addresses] = await Promise.all([listVerifiedVendors(), listAddressOptions(profile.id)])
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-6 lg:p-8">
@@ -21,7 +24,7 @@ export default async function CreateRfpPage() {
         Multi-step wizard — publish to invite verified suppliers.
       </p>
       <div className="mt-8">
-        <RfpCreateWizard vendors={vendors} />
+        <RfpCreateWizard vendors={vendors} addresses={addresses} preview={preview} />
       </div>
     </div>
   )

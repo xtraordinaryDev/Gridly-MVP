@@ -16,9 +16,13 @@ import {
 } from "@/lib/data/rfps"
 import { OpportunityStatusBadge } from "@/components/vendor/opportunity-status-badge"
 import { VendorBidForm } from "@/components/vendor/vendor-bid-form"
-import { VendorOpportunityActions } from "@/components/vendor/vendor-opportunity-actions"
+import { VendorOpportunityActions, WithdrawBidButton } from "@/components/vendor/vendor-opportunity-actions"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import { AttachmentList } from "@/components/attachments"
+import { MessageThread } from "@/components/messages/message-thread"
+import { listThread } from "@/lib/data/messages"
+import { PRICING_MODE_LABEL } from "@/lib/schemas/rfp-wizard"
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -44,13 +48,15 @@ export default async function OpportunityDetailPage({
   if (o.status === "invited") {
     await markInvitationViewed(vendorId, id)
   }
+  const messages = await listThread({ role: "vendor", id: vendorId }, "rfp", id)
 
-  const canBid = o.status !== "declined" && o.status !== "responded" && !o.existingResponse
+  const canBid = o.biddingOpen && o.status !== "declined" && !o.existingResponse
   const facts = [
     { label: "Fuel type", value: o.fuelType, icon: Droplet },
     { label: "Quantity", value: `${o.quantityGallons.toLocaleString()} gal`, icon: Droplet },
     { label: "States", value: o.deliveryStates.join(", "), icon: MapPin },
     { label: "Due date", value: formatDate(o.bidDueDate), icon: CalendarClock },
+    { label: "Pricing", value: o.pricingMode === "index" ? `Index + differential · ${o.indexName ?? "index TBD"}` : PRICING_MODE_LABEL.fixed, icon: Droplet },
   ]
 
   return (
@@ -103,19 +109,63 @@ export default async function OpportunityDetailPage({
               ))}
             </div>
           ) : null}
+          {o.deliverySites.length ? (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Delivery sites</p>
+              <div className="mt-2 overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr><th className="px-3 py-2 text-left font-medium">Site</th><th className="px-3 py-2 text-right font-medium">Gallons</th><th className="px-3 py-2 text-right font-medium">Tank</th><th className="px-3 py-2 text-left font-medium">Window</th></tr>
+                  </thead>
+                  <tbody>
+                    {o.deliverySites.map((s, i) => (
+                      <tr key={i} className="border-t border-border">
+                        <td className="px-3 py-2">{s.address}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{s.gallons ? s.gallons.toLocaleString() : "—"}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{s.tankSizeGallons ? s.tankSizeGallons.toLocaleString() : "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{s.deliveryWindow ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+          {o.attachments.length ? (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Attachments</p>
+              <AttachmentList attachments={o.attachments} className="mt-2" />
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-4">
+        {!o.biddingOpen ? (
+          <p className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+            {o.rfpStatus === "awarded"
+              ? "This RFP has been awarded. Bidding is closed."
+              : o.rfpStatus === "cancelled"
+                ? "The buyer cancelled this RFP."
+                : `Bidding closed on ${formatDate(o.bidDueDate)}.`}
+          </p>
+        ) : null}
+        {o.withdrawn && o.biddingOpen ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            You withdrew your earlier bid. You can submit a new one until the deadline.
+          </p>
+        ) : null}
         {o.existingResponse ? (
           <Card>
             <CardContent className="p-6">
               <h2 className="font-semibold text-navy">Your submitted bid</h2>
               <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                 <div>
-                  <dt className="text-muted-foreground">Price / gal</dt>
+                  <dt className="text-muted-foreground">{o.existingResponse.pricingMode === "index" ? "Pricing" : "Price / gal"}</dt>
                   <dd className="font-medium">
-                    ${o.existingResponse.pricePerGallon.toFixed(4)}
+                    {o.existingResponse.pricingMode === "index"
+                      ? `${o.existingResponse.indexName ?? "Index"} ${(o.existingResponse.differential ?? 0) >= 0 ? "+" : "−"} $${Math.abs(o.existingResponse.differential ?? 0).toFixed(4)} (≈ $${o.existingResponse.pricePerGallon.toFixed(4)})`
+                      : `$${o.existingResponse.pricePerGallon.toFixed(4)}`}
                   </dd>
                 </div>
                 <div>
@@ -128,14 +178,21 @@ export default async function OpportunityDetailPage({
                   <dt className="text-muted-foreground">Terms</dt>
                   <dd>{o.existingResponse.deliveryTerms}</dd>
                 </div>
+                {o.existingResponse.attachmentPath ? (
+                  <div className="sm:col-span-2">
+                    <dt className="text-muted-foreground">Attachment</dt>
+                    <dd><AttachmentList attachments={[{ name: o.existingResponse.attachmentName ?? "Attachment", path: o.existingResponse.attachmentPath }]} className="mt-1" /></dd>
+                  </div>
+                ) : null}
               </dl>
+              {o.biddingOpen ? <WithdrawBidButton rfpId={id} /> : null}
             </CardContent>
           </Card>
         ) : canBid ? (
           <Card>
             <CardContent className="p-6">
               <h2 className="mb-4 font-semibold text-navy">Submit bid</h2>
-              <VendorBidForm rfpId={id} quantityGallons={o.quantityGallons} />
+              <VendorBidForm rfpId={id} quantityGallons={o.quantityGallons} pricingMode={o.pricingMode} indexName={o.indexName} preview={preview} />
               <VendorOpportunityActions rfpId={id} />
             </CardContent>
           </Card>
@@ -144,6 +201,16 @@ export default async function OpportunityDetailPage({
             You declined this opportunity.
           </p>
         ) : null}
+
+        <MessageThread
+          threadType="rfp"
+          threadId={id}
+          messages={messages}
+          role="vendor"
+          title="Questions for the buyer"
+          description="Private to you and the buyer. Buyer broadcasts to all suppliers also appear here."
+          emptyText="Ask about specs, sites, or timing before you bid."
+        />
       </div>
     </div>
   )

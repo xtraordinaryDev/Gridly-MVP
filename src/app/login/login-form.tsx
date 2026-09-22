@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -55,7 +54,6 @@ const DEMO_ROLES: {
 ]
 
 export function LoginForm({ preview }: { preview: boolean }) {
-  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [demoRole, setDemoRole] = useState<Role | null>(null)
 
@@ -64,8 +62,8 @@ export function LoginForm({ preview }: { preview: boolean }) {
     startTransition(async () => {
       const res = await signInAsDemo(role)
       if (res.ok) {
-        router.push(res.redirectTo)
-        router.refresh()
+        // Full navigation so the portal renders with the fresh session cookies.
+        window.location.assign(res.redirectTo)
       } else {
         setDemoRole(null)
         toast.error(res.message)
@@ -83,7 +81,7 @@ export function LoginForm({ preview }: { preview: boolean }) {
       const res = await signIn(values)
       if (res.ok) {
         toast.success(preview ? "Signed in (preview)." : "Welcome back.")
-        router.push(res.redirectTo)
+        window.location.assign(res.redirectTo)
       } else {
         toast.error(res.message)
       }
@@ -124,6 +122,11 @@ export function LoginForm({ preview }: { preview: boolean }) {
           {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           Sign in
         </Button>
+        <p className="-mt-1 text-right text-sm">
+          <Link href="/forgot-password" className="text-muted-foreground hover:text-brand-blue hover:underline">
+            Forgot password?
+          </Link>
+        </p>
 
         <div className="space-y-2 rounded-xl border border-dashed border-border bg-muted/40 p-3">
           <p className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">

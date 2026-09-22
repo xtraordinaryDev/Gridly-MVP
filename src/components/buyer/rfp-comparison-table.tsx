@@ -1,5 +1,9 @@
 "use client"
 
+import { AttachmentList } from "@/components/attachments"
+import { PerformanceBadges } from "@/components/orders/rating-card"
+import type { VendorPerformance } from "@/lib/data/ratings"
+
 import Link from "next/link"
 import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -21,9 +25,17 @@ import {
 
 const ROWS: { key: string; label: string; render: (r: RfpResponseView) => React.ReactNode }[] = [
   {
+    key: "pricing",
+    label: "Pricing",
+    render: (r) =>
+      r.pricingMode === "index"
+        ? `${r.indexName ?? "Index"} ${r.differential != null ? (r.differential >= 0 ? "+" : "−") + " $" + Math.abs(r.differential).toFixed(4) : ""}`
+        : "Fixed",
+  },
+  {
     key: "ppg",
     label: "Price / gallon",
-    render: (r) => `$${r.pricePerGallon.toFixed(4)}`,
+    render: (r) => (r.pricingMode === "index" ? `≈ $${r.pricePerGallon.toFixed(4)} (est.)` : `$${r.pricePerGallon.toFixed(4)}`),
   },
   {
     key: "total",
@@ -45,14 +57,26 @@ const ROWS: { key: string; label: string; render: (r: RfpResponseView) => React.
     label: "Notes",
     render: (r) => r.notes ?? "—",
   },
+  {
+    key: "attachment",
+    label: "Attachment",
+    render: (r) =>
+      r.attachmentPath ? (
+        <AttachmentList attachments={[{ name: r.attachmentName ?? "Attachment", path: r.attachmentPath }]} />
+      ) : (
+        "—"
+      ),
+  },
 ]
 
 export function RfpComparisonTable({
   rfp,
   canAward,
+  performance = {},
 }: {
   rfp: BuyerRfpDetail
   canAward: boolean
+  performance?: Record<string, VendorPerformance>
 }) {
   const [pending, startTransition] = useTransition()
   const [awardVendor, setAwardVendor] = useState<RfpResponseView | null>(null)
@@ -114,6 +138,17 @@ export function RfpComparisonTable({
                 ))}
               </tr>
             ))}
+            <tr className="border-b border-border">
+              <td className="px-4 py-3 font-medium text-muted-foreground">Track record</td>
+              {rfp.responses.map((r) => {
+                const perf = performance[r.vendorId]
+                return (
+                  <td key={`perf-${r.vendorId}`} className="px-4 py-3">
+                    {perf ? <PerformanceBadges avgStars={perf.avgStars} ratingCount={perf.ratingCount} onTimePct={perf.onTimePct} awardsCount={perf.awardsCount} /> : <span className="text-xs text-muted-foreground">—</span>}
+                  </td>
+                )
+              })}
+            </tr>
             <tr>
               <td className="px-4 py-3 font-medium text-muted-foreground">Profile</td>
               {rfp.responses.map((r) => (
@@ -127,7 +162,7 @@ export function RfpComparisonTable({
                 </td>
               ))}
             </tr>
-            {canAward && rfp.status === "published" ? (
+            {canAward && (rfp.status === "published" || rfp.status === "closed") ? (
               <tr>
                 <td className="px-4 py-3 font-medium text-muted-foreground">Action</td>
                 {rfp.responses.map((r) => (

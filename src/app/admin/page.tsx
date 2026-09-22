@@ -1,9 +1,15 @@
 import Link from "next/link"
 import {
+  AlertTriangle,
   ArrowUpRight,
   Building2,
+  CircleDollarSign,
   Clock,
   FileStack,
+  Hourglass,
+  Leaf,
+  Receipt,
+  Sprout,
   ShieldCheck,
   Truck,
   UserPlus,
@@ -11,6 +17,11 @@ import {
 
 import { getDashboardStats, listApplications } from "@/lib/data/applications"
 import { countPendingBuyerApplications } from "@/lib/data/buyer-applications"
+import { getAdminInvoiceStats } from "@/lib/data/invoices"
+import { money, moneyCompact } from "@/lib/invoicing/types"
+import { RankedBars, StatTile } from "@/components/invoicing/charts"
+import { getEmissionsStats } from "@/lib/data/emissions"
+import { formatTons } from "@/lib/emissions/factors"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge, SourceBadge } from "@/components/admin/status-badge"
 
@@ -24,10 +35,12 @@ function formatDate(value: string | null) {
 }
 
 export default async function AdminDashboardPage() {
-  const [stats, applications, pendingBuyers] = await Promise.all([
+  const [stats, applications, pendingBuyers, inv, em] = await Promise.all([
     getDashboardStats(),
     listApplications(),
     countPendingBuyerApplications(),
+    getAdminInvoiceStats(),
+    getEmissionsStats({ role: "admin", id: "admin" }),
   ])
 
   const recent = applications.slice(0, 5)
@@ -101,6 +114,34 @@ export default async function AdminDashboardPage() {
           </Link>
         ))}
       </div>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-navy">Invoicing across the network</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile label="Invoiced" value={moneyCompact(inv.invoicedTotal)} title={money(inv.invoicedTotal)} hint={`${inv.invoiceCount} invoices`} icon={Receipt} accent="text-brand-blue bg-brand-blue/10" />
+          <StatTile label="Collected" value={moneyCompact(inv.paidTotal)} title={money(inv.paidTotal)} icon={CircleDollarSign} accent="text-emerald bg-emerald/15" />
+          <StatTile label="Outstanding" value={moneyCompact(inv.outstanding)} title={money(inv.outstanding)} icon={Hourglass} accent="text-navy bg-navy/10" />
+          <StatTile label="Overdue" value={moneyCompact(inv.overdue)} title={money(inv.overdue)} icon={AlertTriangle} accent={inv.overdue > 0 ? "text-red-700 bg-red-100" : "text-muted-foreground bg-muted"} />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <RankedBars title="Top suppliers by invoiced" items={inv.topVendors} />
+          <RankedBars title="Top buyers by spend" items={inv.topBuyers} />
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-navy">Emissions across the network ({em.year} YTD)</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile label="CO2e from fuel invoiced" value={formatTons(em.tonsYtd)} hint={`${em.gallonsYtd.toLocaleString("en-US")} gal`} icon={Leaf} accent="text-emerald bg-emerald/15" />
+          <StatTile label="Carbon intensity" value={em.intensityKgPerGal == null ? "—" : `${em.intensityKgPerGal.toFixed(2)} kg/gal`} icon={Leaf} accent="text-navy bg-navy/10" />
+          <StatTile label="Renewable share" value={`${em.renewableSharePct}%`} icon={Sprout} accent="text-emerald bg-emerald/15" />
+          <StatTile label="Avoided vs diesel" value={formatTons(em.avoidedTonsYtd)} icon={Sprout} accent="text-brand-blue bg-brand-blue/10" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <RankedBars title="Emissions by fuel type" items={em.byFuel} color="#10B981" />
+          <RankedBars title="Emissions by buyer" items={em.byParty} color="#10B981" />
+        </div>
+      </section>
 
       <Card>
         <CardContent className="p-0">

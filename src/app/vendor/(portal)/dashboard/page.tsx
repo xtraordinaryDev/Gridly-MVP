@@ -1,12 +1,18 @@
 import Link from "next/link"
 import {
+  AlertTriangle,
   BadgeCheck,
   CheckCircle2,
+  CircleDollarSign,
   Eye,
   Gauge,
+  Hourglass,
+  Leaf,
   Send,
+  Sprout,
   ShieldCheck,
   Sparkles,
+  TrendingUp,
   Truck,
 } from "lucide-react"
 
@@ -21,6 +27,15 @@ import {
   getOpportunities,
   getVendorActivity,
 } from "@/lib/data/vendor"
+import { getVendorInvoiceStats } from "@/lib/data/invoices"
+import { money, moneyCompact } from "@/lib/invoicing/types"
+import { AgingBar, MonthlyBars, RankedBars, SingleBars, StatTile } from "@/components/invoicing/charts"
+import { getEmissionsStats } from "@/lib/data/emissions"
+import { listVendorDocuments, DOCUMENT_TYPES } from "@/lib/data/documents"
+import { getVendorPerformance } from "@/lib/data/ratings"
+import { listOrders } from "@/lib/data/orders"
+import { Stars } from "@/components/orders/rating-card"
+import { EMISSION_FACTOR_SOURCE, formatTons } from "@/lib/emissions/factors"
 import { Card, CardContent } from "@/components/ui/card"
 import { OpportunitiesTable } from "@/components/vendor/opportunities-table"
 
@@ -58,11 +73,21 @@ export default async function VendorDashboardPage() {
   if (!vendor) return null
 
   const vendorId = await resolveVendorIdForSession(profile.id, preview)
-  const [opportunities, oppList, activity] = await Promise.all([
+  const [opportunities, oppList, activity, inv, em, docs, perf, orders] = await Promise.all([
     getOpportunities(),
     listVendorOpportunities(vendorId),
     getVendorActivity(),
+    getVendorInvoiceStats(vendorId),
+    getEmissionsStats({ role: "vendor", id: vendorId }),
+    listVendorDocuments(vendorId),
+    getVendorPerformance(vendorId),
+    listOrders(vendorId ? { role: "vendor", id: vendorId } : { role: "vendor", id: "" }),
   ])
+  const docIssues = DOCUMENT_TYPES.filter((t) => t.required && !docs.some((d) => d.type === t.type)).map((t) => `${t.label} missing`)
+    .concat(docs.filter((d) => d.isExpired).map((d) => `${DOCUMENT_TYPES.find((t) => t.type === d.type)?.label ?? d.type} expired`))
+    .concat(docs.filter((d) => d.expiresSoon).map((d) => `${DOCUMENT_TYPES.find((t) => t.type === d.type)?.label ?? d.type} expires soon`))
+  const openOrders = orders.filter((o) => !["delivered", "cancelled"].includes(o.status))
+  const emergencies = openOrders.filter((o) => o.urgency === "emergency")
   const stats = getDashboardStats(vendor, opportunities)
 
   const kpis = [
@@ -103,6 +128,19 @@ export default async function VendorDashboardPage() {
         </div>
       </div>
 
+      {docIssues.length ? (
+        <Link href="/vendor/documents" className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 hover:bg-amber-100">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span><strong>Compliance:</strong> {docIssues.join(" · ")}. Upload current copies to keep your verified status.</span>
+        </Link>
+      ) : null}
+      {emergencies.length ? (
+        <Link href="/vendor/orders" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900 hover:bg-red-100">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span><strong>{emergencies.length} emergency order{emergencies.length === 1 ? "" : "s"}</strong> waiting for confirmation.</span>
+        </Link>
+      ) : null}
+
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map((kpi) => (
@@ -117,6 +155,54 @@ export default async function VendorDashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Performance + fulfilment */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Buyer rating</p><div className="mt-2 flex items-center gap-2">{perf.avgStars != null ? <><Stars value={perf.avgStars} size="size-5" /><span className="text-2xl font-bold text-navy">{perf.avgStars.toFixed(1)}</span></> : <span className="text-2xl font-bold text-navy">—</span>}</div><p className="text-xs text-muted-foreground">{perf.ratingCount} rating{perf.ratingCount === 1 ? "" : "s"}</p></CardContent></Card>
+        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">On-time deliveries</p><p className="mt-2 text-2xl font-bold text-navy">{perf.onTimePct == null ? "—" : `${perf.onTimePct}%`}</p><p className="text-xs text-muted-foreground">{perf.deliveriesCount} logged</p></CardContent></Card>
+        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Open orders</p><p className="mt-2 text-2xl font-bold text-navy">{openOrders.length}</p><Link href="/vendor/orders" className="text-xs text-brand-blue hover:underline">Confirm &amp; schedule</Link></CardContent></Card>
+        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Contracts won</p><p className="mt-2 text-2xl font-bold text-navy">{perf.awardsCount}</p><p className="text-xs text-muted-foreground">{perf.activeContracts} active</p></CardContent></Card>
+      </div>
+
+      {/* Receivables */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-navy">Receivables</h2>
+          <Link href="/vendor/invoices" className="text-sm font-medium text-brand-blue hover:underline">
+            View invoices
+          </Link>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile label="Outstanding" value={moneyCompact(inv.outstanding)} title={money(inv.outstanding)} hint={`${inv.openCount} open`} icon={Hourglass} accent="text-brand-blue bg-brand-blue/10" href="/vendor/invoices" />
+          <StatTile label="Overdue" value={moneyCompact(inv.overdue)} title={money(inv.overdue)} hint={`${inv.overdueCount}`} icon={AlertTriangle} accent={inv.overdue > 0 ? "text-red-700 bg-red-100" : "text-muted-foreground bg-muted"} href="/vendor/invoices" />
+          <StatTile label="Paid YTD" value={moneyCompact(inv.paidYtd)} title={money(inv.paidYtd)} hint={`${money(inv.paidThisMonth)} this month`} icon={CircleDollarSign} accent="text-emerald bg-emerald/15" href="/vendor/invoices" />
+          <StatTile label="Avg days to pay" value={inv.avgDaysToPay == null ? "—" : `${inv.avgDaysToPay}d`} icon={TrendingUp} accent="text-navy bg-navy/10" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <MonthlyBars series={inv.monthly} title="Invoiced vs collected (6 months)" labels={{ invoiced: "Invoiced", paid: "Collected" }} />
+          <AgingBar buckets={inv.aging} />
+          <RankedBars title="Revenue by buyer" items={inv.byBuyer} />
+        </div>
+      </section>
+
+      {/* Emissions delivered */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-navy">Emissions delivered</h2>
+          <p className="text-sm text-muted-foreground">Scope 1 CO2e your customers report from fuel you invoiced, {em.year} year to date.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile label="CO2e delivered YTD" value={formatTons(em.tonsYtd)} hint={`${em.gallonsYtd.toLocaleString("en-US")} gal`} icon={Leaf} accent="text-emerald bg-emerald/15" />
+          <StatTile label="Carbon intensity" value={em.intensityKgPerGal == null ? "—" : `${em.intensityKgPerGal.toFixed(2)} kg/gal`} icon={Leaf} accent="text-navy bg-navy/10" />
+          <StatTile label="Renewable share" value={`${em.renewableSharePct}%`} hint="of gallons delivered" icon={Sprout} accent="text-emerald bg-emerald/15" />
+          <StatTile label="Avoided for customers" value={formatTons(em.avoidedTonsYtd)} hint="vs conventional diesel" icon={Sprout} accent="text-brand-blue bg-brand-blue/10" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <SingleBars title="Emissions delivered by month" unit="t CO2e" color="#10B981" series={em.monthly.map((m) => ({ label: m.label, value: m.tons }))} />
+          <RankedBars title="Emissions by buyer" items={em.byParty} color="#10B981" empty="No fuel invoiced yet." />
+        </div>
+        <p className="text-xs text-muted-foreground">Factors: {EMISSION_FACTOR_SOURCE}.</p>
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Recent opportunities */}

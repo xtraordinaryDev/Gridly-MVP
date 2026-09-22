@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
+  FileWarning,
   Building2,
   FileStack,
   LayoutDashboard,
@@ -20,6 +21,7 @@ const NAV = [
   { label: "Verified Vendors", href: "/admin/vendors", icon: ShieldCheck },
   { label: "Buyers", href: "/admin/buyers", icon: Building2 },
   { label: "RFPs", href: "/admin/rfps", icon: Truck },
+  { label: "Compliance", href: "/admin/compliance", icon: FileWarning },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ]
 

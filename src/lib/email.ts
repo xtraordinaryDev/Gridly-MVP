@@ -15,6 +15,10 @@ import {
   VendorInfoRequested,
   VendorOnboardingInvite,
   VendorRejected,
+  InvoiceSent,
+  InvoiceDisputed,
+  InvoicePaymentRecorded,
+  OrderEvent,
 } from "@/emails"
 import type { BuyerAccessRequestReceivedProps } from "@/emails/BuyerAccessRequestReceived"
 import type { BuyerApprovedCreateAccountProps } from "@/emails/BuyerApprovedCreateAccount"
@@ -27,6 +31,10 @@ import type { VendorApprovedCreateAccountProps } from "@/emails/VendorApprovedCr
 import type { VendorInfoRequestedProps } from "@/emails/VendorInfoRequested"
 import type { VendorOnboardingInviteProps } from "@/emails/VendorOnboardingInvite"
 import type { VendorRejectedProps } from "@/emails/VendorRejected"
+import type { InvoiceSentProps } from "@/emails/InvoiceSent"
+import type { InvoiceDisputedProps } from "@/emails/InvoiceDisputed"
+import type { InvoicePaymentRecordedProps } from "@/emails/InvoicePaymentRecorded"
+import type { OrderEventProps } from "@/emails/OrderEvent"
 import { siteUrl } from "@/emails/components/email-layout"
 
 export { siteUrl }
@@ -43,6 +51,10 @@ export type EmailTemplate =
   | { template: "rfp-invitation"; data: RFPInvitationProps }
   | { template: "daily-opportunity-digest"; data: DailyOpportunityDigestProps }
   | { template: "rfp-awarded"; data: RFPAwardedNotificationProps }
+  | { template: "invoice-sent"; data: InvoiceSentProps }
+  | { template: "invoice-disputed"; data: InvoiceDisputedProps }
+  | { template: "invoice-payment-recorded"; data: InvoicePaymentRecordedProps }
+  | { template: "order-event"; data: OrderEventProps }
 
 type SendEmailInput = {
   to: string | string[]
@@ -75,6 +87,16 @@ function subjectFor(payload: EmailTemplate): string {
       return payload.data.isWinner
         ? `Contract awarded — ${payload.data.rfpTitle}`
         : `Update on your bid — ${payload.data.rfpTitle}`
+    case "invoice-sent":
+      return `Invoice ${payload.data.invoiceNumber} from ${payload.data.vendorName} — ${payload.data.total} due ${payload.data.dueDate}`
+    case "invoice-disputed":
+      return `Invoice ${payload.data.invoiceNumber} disputed by ${payload.data.buyerName}`
+    case "invoice-payment-recorded":
+      return payload.data.isPaidInFull
+        ? `Invoice ${payload.data.invoiceNumber} paid in full`
+        : `Payment recorded on invoice ${payload.data.invoiceNumber}`
+    case "order-event":
+      return `${payload.data.headline} — GridLink`
   }
 }
 
@@ -102,6 +124,14 @@ function renderTemplate(payload: EmailTemplate): ReactElement {
       return createElement(DailyOpportunityDigest, payload.data)
     case "rfp-awarded":
       return createElement(RFPAwardedNotification, payload.data)
+    case "invoice-sent":
+      return createElement(InvoiceSent, payload.data)
+    case "invoice-disputed":
+      return createElement(InvoiceDisputed, payload.data)
+    case "invoice-payment-recorded":
+      return createElement(InvoicePaymentRecorded, payload.data)
+    case "order-event":
+      return createElement(OrderEvent, payload.data)
   }
 }
 

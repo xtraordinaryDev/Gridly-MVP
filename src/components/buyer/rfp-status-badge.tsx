@@ -7,6 +7,7 @@ const CONFIG: Record<RfpStatus, { label: string; className: string }> = {
   published: { label: "Published", className: "bg-brand-blue/10 text-brand-blue" },
   closed: { label: "Closed", className: "bg-amber-100 text-amber-800" },
   awarded: { label: "Awarded", className: "bg-emerald/15 text-emerald" },
+  cancelled: { label: "Cancelled", className: "bg-muted text-muted-foreground line-through" },
 }
 
 export function RfpStatusBadge({

@@ -14,15 +14,21 @@ import {
   RFP_FUEL_TYPES,
   RFP_RECURRENCE,
   RFP_URGENCY,
+  PRICING_MODES,
+  PRICING_MODE_LABEL,
 } from "@/lib/schemas/rfp-wizard"
+import { AttachmentsField } from "@/components/attachments"
 import {
   DELIVERY_CAPABILITIES,
   SPECIAL_CERTIFICATIONS,
   US_STATES,
 } from "@/lib/schemas/vendor-application"
 import { matchVerifiedSuppliers } from "@/lib/rfp/match-suppliers"
-import { publishRfp, saveRfpDraft } from "@/app/buyer/(portal)/rfps/actions"
+import { publishRfp, publishRfpDraft, saveRfpDraft, updateRfpDraft } from "@/app/buyer/(portal)/rfps/actions"
+import type { BuyerRfpDetail } from "@/lib/rfp/types"
 import { SupplierPickerModal } from "@/components/buyer/supplier-picker-modal"
+import { AddressCombobox } from "@/components/buyer/address-combobox"
+import type { AddressOptions } from "@/lib/data/sites"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -54,23 +60,66 @@ const STEPS = [
 ] as const
 
 const STEP_FIELDS: (keyof RfpWizardInput)[][] = [
-  ["title", "description", "fuelType", "quantityGallons", "recurrence", "urgency"],
+  ["title", "description", "fuelType", "quantityGallons", "recurrence", "urgency", "pricingMode", "indexName"],
   ["deliveryStates", "deliveryAddresses", "deliveryDates"],
-  ["requiredCapabilities", "requiredCertifications", "insuranceRequirements"],
+  ["requiredCapabilities", "requiredCertifications", "insuranceRequirements", "attachments"],
   ["supplierInviteMode", "selectedVendorIds"],
   ["bidDueDate", "decisionDate", "expectedAwardDate"],
   [],
 ]
 
-export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
+const EMPTY_ADDRESSES: AddressOptions = { sites: [], previous: [] }
+
+const toDateInput = (iso: string | null) => (iso ? iso.slice(0, 10) : "")
+
+function initialValues(rfp: BuyerRfpDetail): RfpWizardInput {
+  return {
+    title: rfp.title,
+    description: rfp.description,
+    fuelType: (RFP_FUEL_TYPES as readonly string[]).includes(rfp.fuelType) ? (rfp.fuelType as RfpWizardInput["fuelType"]) : "Diesel",
+    quantityGallons: rfp.quantityGallons,
+    recurrence: rfp.recurrence,
+    urgency: rfp.urgency,
+    deliveryStates: rfp.deliveryStates.filter((s): s is (typeof US_STATES)[number] => (US_STATES as readonly string[]).includes(s)),
+    deliveryAddresses: rfp.deliverySites.length
+      ? rfp.deliverySites.map((s) => ({ address: s.address, gallons: s.gallons, tankSizeGallons: s.tankSizeGallons, deliveryWindow: s.deliveryWindow ?? "" }))
+      : [{ address: "", gallons: null, tankSizeGallons: null, deliveryWindow: "" }],
+    pricingMode: rfp.pricingMode,
+    indexName: rfp.indexName ?? "",
+    attachments: rfp.attachments,
+    deliveryDates: rfp.deliveryDates.length ? rfp.deliveryDates.map(toDateInput) : [""],
+    requiredCapabilities: rfp.requiredCapabilities.filter((c): c is (typeof DELIVERY_CAPABILITIES)[number] => (DELIVERY_CAPABILITIES as readonly string[]).includes(c)),
+    requiredCertifications: rfp.requiredCertifications.filter((c): c is (typeof SPECIAL_CERTIFICATIONS)[number] => (SPECIAL_CERTIFICATIONS as readonly string[]).includes(c)),
+    insuranceRequirements: rfp.insuranceRequirements ?? "",
+    supplierInviteMode: "auto",
+    selectedVendorIds: [],
+    bidDueDate: toDateInput(rfp.bidDueDate),
+    decisionDate: toDateInput(rfp.decisionDate),
+    expectedAwardDate: toDateInput(rfp.expectedAwardDate),
+  }
+}
+
+export function RfpCreateWizard({
+  vendors,
+  addresses = EMPTY_ADDRESSES,
+  initial,
+  preview = false,
+}: {
+  vendors: DirectoryVendor[]
+  addresses?: AddressOptions
+  /** Editing an existing draft */
+  initial?: BuyerRfpDetail
+  preview?: boolean
+}) {
   const router = useRouter()
+  const [uploadPrefix] = useState(() => initial?.id ?? `new-${Date.now().toString(36)}`)
   const [step, setStep] = useState(0)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   const form = useForm<RfpWizardInput>({
     resolver: zodResolver(RfpWizardSchema),
-    defaultValues: {
+    defaultValues: initial ? initialValues(initial) : {
       title: "",
       description: "",
       fuelType: "Diesel",
@@ -78,8 +127,11 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
       recurrence: "one_time",
       urgency: "standard",
       deliveryStates: [],
-      deliveryAddresses: [{ address: "" }],
+      deliveryAddresses: [{ address: "", gallons: null, tankSizeGallons: null, deliveryWindow: "" }],
       deliveryDates: [""],
+      pricingMode: "fixed",
+      indexName: "",
+      attachments: [],
       requiredCapabilities: [],
       requiredCertifications: [],
       insuranceRequirements: "",
@@ -236,12 +288,60 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
                   <FormItem>
                     <FormLabel>Quantity (gallons)</FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} />
+                      <Input
+                        type="number"
+                        {...field}
+                        onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="pricingMode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Pricing</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange} items={PRICING_MODES.map((m) => ({ value: m, label: PRICING_MODE_LABEL[m] }))}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {PRICING_MODES.map((m) => (
+                          <SelectItem key={m} value={m}>{PRICING_MODE_LABEL[m]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {field.value === "index"
+                        ? "Suppliers bid a differential (plus or minus) against a published index; the price floats with the market."
+                        : "Suppliers bid a firm price per gallon for the contract term."}
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {watchAll.pricingMode === "index" ? (
+                <FormField
+                  control={form.control}
+                  name="indexName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Index to price against</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. OPIS Chicago Rack ULSD" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
@@ -327,18 +427,71 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
               )}
             />
             <div>
-              <FormLabel>Delivery addresses</FormLabel>
+              <FormLabel>Delivery sites</FormLabel>
+              <p className="text-xs text-muted-foreground">Gallons, tank size, and window per site help suppliers price accurately.</p>
               {addrFields.fields.map((f, i) => (
-                <div key={f.id} className="mt-2 flex gap-2">
+                <div key={f.id} className="mt-2 flex gap-2 rounded-xl border border-border p-3">
                   <FormField
                     control={form.control}
                     name={`deliveryAddresses.${i}.address`}
                     render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          <Input placeholder="Street, city, state ZIP" {...field} />
+                          <AddressCombobox
+                        value={field.value}
+                        options={addresses}
+                        onChange={(address, state) => {
+                          field.onChange(address)
+                          // Picking a saved site also ticks its state.
+                          const states = form.getValues("deliveryStates") ?? []
+                          if (state && (US_STATES as readonly string[]).includes(state) && !states.includes(state as (typeof US_STATES)[number])) {
+                            form.setValue("deliveryStates", [...states, state as (typeof US_STATES)[number]], { shouldValidate: true })
+                          }
+                        }}
+                      />
                         </FormControl>
                         <FormMessage />
+                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                          <FormField
+                            control={form.control}
+                            name={`deliveryAddresses.${i}.gallons`}
+                            render={({ field: g }) => (
+                              <Input
+                                type="number"
+                                min={0}
+                                placeholder="Gallons at this site"
+                                name={g.name}
+                                ref={g.ref}
+                                onBlur={g.onBlur}
+                                value={g.value == null || Number.isNaN(g.value) ? "" : String(g.value)}
+                                onChange={(e) => g.onChange(e.target.value === "" ? null : e.target.valueAsNumber)}
+                              />
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`deliveryAddresses.${i}.tankSizeGallons`}
+                            render={({ field: g }) => (
+                              <Input
+                                type="number"
+                                min={0}
+                                placeholder="Tank size (gal)"
+                                name={g.name}
+                                ref={g.ref}
+                                onBlur={g.onBlur}
+                                value={g.value == null || Number.isNaN(g.value) ? "" : String(g.value)}
+                                onChange={(e) => g.onChange(e.target.value === "" ? null : e.target.valueAsNumber)}
+                              />
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`deliveryAddresses.${i}.deliveryWindow`}
+                            render={({ field: g }) => (
+                              <Input placeholder="Delivery window (e.g. Mon–Fri 6–10am)" {...g} value={g.value ?? ""} />
+                            )}
+                          />
+                        </div>
                       </FormItem>
                     )}
                   />
@@ -359,7 +512,7 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
                 variant="outline"
                 size="sm"
                 className="mt-2"
-                onClick={() => addrFields.append({ address: "" })}
+                onClick={() => addrFields.append({ address: "", gallons: null, tankSizeGallons: null, deliveryWindow: "" })}
               >
                 <Plus className="size-4" />
                 Add address
@@ -468,6 +621,21 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
                   <FormControl>
                     <Textarea rows={2} placeholder="$2M GL, $1M auto…" {...field} />
                   </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="attachments"
+              render={({ field }) => (
+                <FormItem>
+                  <AttachmentsField
+                    value={field.value ?? []}
+                    onChange={field.onChange}
+                    prefix={`rfps/${uploadPrefix}`}
+                    preview={preview}
+                  />
+                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -588,7 +756,14 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
               gal · {watchAll.urgency}
             </p>
             <p>
+              <strong>Pricing:</strong> {PRICING_MODE_LABEL[watchAll.pricingMode ?? "fixed"]}
+              {watchAll.pricingMode === "index" && watchAll.indexName ? ` — ${watchAll.indexName}` : ""}
+            </p>
+            <p>
               <strong>States:</strong> {watchAll.deliveryStates?.join(", ")}
+            </p>
+            <p>
+              <strong>Sites:</strong> {watchAll.deliveryAddresses?.length} · <strong>Attachments:</strong> {watchAll.attachments?.length ?? 0}
             </p>
             <p>
               <strong>Suppliers:</strong> {watchAll.selectedVendorIds?.length} selected
@@ -618,7 +793,7 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
                   disabled={isPending}
                   onClick={() => {
                     startTransition(async () => {
-                      const res = await saveRfpDraft(form.getValues())
+                      const res = initial ? await updateRfpDraft(initial.id, form.getValues()) : await saveRfpDraft(form.getValues())
                       if (res.ok) {
                         toast.success("Draft saved")
                         router.push(`/buyer/rfps/${res.rfpId}`)
@@ -633,7 +808,7 @@ export function RfpCreateWizard({ vendors }: { vendors: DirectoryVendor[] }) {
                   disabled={isPending}
                   onClick={() => {
                     startTransition(async () => {
-                      const res = await publishRfp(form.getValues())
+                      const res = initial ? await publishRfpDraft(initial.id, form.getValues()) : await publishRfp(form.getValues())
                       if (res.ok) {
                         toast.success("RFP published — invitations sent")
                         router.push(`/buyer/rfps/${res.rfpId}`)

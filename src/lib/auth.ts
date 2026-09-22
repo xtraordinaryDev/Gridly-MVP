@@ -71,9 +71,10 @@ export async function requireAdmin(): Promise<{
   }
 
   const profile = await getSessionProfile()
-  if (!profile || profile.role !== "admin") {
-    redirect("/login")
-  }
+  if (!profile) redirect("/login")
+  // Signed in as a different role (e.g. switched demo accounts in another
+  // tab): send them to their own portal instead of the login page.
+  if (profile.role !== "admin") redirect(roleHomePath(profile.role))
 
   return { profile, preview: false }
 }
@@ -91,9 +92,10 @@ export async function requireVendor(): Promise<{
   }
 
   const profile = await getSessionProfile()
-  if (!profile || profile.role !== "vendor") {
-    redirect("/login")
-  }
+  if (!profile) redirect("/login")
+  // Signed in as a different role (e.g. switched demo accounts in another
+  // tab): send them to their own portal instead of the login page.
+  if (profile.role !== "vendor") redirect(roleHomePath(profile.role))
 
   return { profile, preview: false }
 }
@@ -110,9 +112,10 @@ export async function requireBuyer(): Promise<{
   }
 
   const profile = await getSessionProfile()
-  if (!profile || profile.role !== "buyer") {
-    redirect("/login")
-  }
+  if (!profile) redirect("/login")
+  // Signed in as a different role (e.g. switched demo accounts in another
+  // tab): send them to their own portal instead of the login page.
+  if (profile.role !== "buyer") redirect(roleHomePath(profile.role))
 
   return { profile, preview: false }
 }

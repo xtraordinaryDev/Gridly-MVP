@@ -2,6 +2,7 @@
 
 import { SupplierInterestSchema } from "@/lib/schemas/supplier-interest"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { sendEmail } from "@/lib/email"
 
 export type SubmitInterestResult =
@@ -26,6 +27,10 @@ export async function submitSupplierInterest(
   }
 
   const data = parsed.data
+
+  if (!isSupabaseConfigured()) {
+    return { ok: true }
+  }
 
   try {
     const supabase = createAdminClient()

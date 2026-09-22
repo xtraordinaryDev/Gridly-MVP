@@ -126,6 +126,11 @@ export function OpportunitiesTable({
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
                     {formatDate(o.dueDate)}
+                    {o.rfpStatus === "awarded" ? (
+                      <span className="ml-2 rounded-full bg-emerald/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald">Awarded</span>
+                    ) : !o.biddingOpen ? (
+                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Closed</span>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <OpportunityStatusBadge status={o.status} />

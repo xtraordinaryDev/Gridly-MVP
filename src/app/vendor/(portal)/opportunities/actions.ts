@@ -8,6 +8,7 @@ import {
   declineVendorInvitation,
   resolveVendorIdForSession,
   submitVendorBid,
+  withdrawVendorBid,
 } from "@/lib/data/rfps"
 
 export type VendorActionResult = { ok: true } | { ok: false; message: string }
@@ -38,6 +39,19 @@ export async function declineOpportunity(rfpId: string): Promise<VendorActionRes
   if (result.ok) {
     revalidatePath(`/vendor/opportunities/${rfpId}`)
     revalidatePath("/vendor/opportunities")
+  }
+  return result
+}
+
+export async function withdrawBid(rfpId: string): Promise<VendorActionResult> {
+  const { profile, preview } = await requireVendor()
+  const vendorId = await resolveVendorIdForSession(profile.id, preview)
+  const result = await withdrawVendorBid(vendorId, rfpId)
+  if (result.ok) {
+    revalidatePath(`/vendor/opportunities/${rfpId}`)
+    revalidatePath("/vendor/opportunities")
+    revalidatePath("/vendor/rfp-responses")
+    revalidatePath(`/buyer/rfps/${rfpId}`)
   }
   return result
 }
