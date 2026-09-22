@@ -34,7 +34,8 @@ import { cn } from "@/lib/utils"
 
 function fmt(d: string | null) {
   if (!d) return "—"
-  return new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  return new Date(d + "T12:00:00Z").toLocaleDateString("en-US", {
+    timeZone: "UTC", month: "short", day: "numeric" })
 }
 
 export function OrdersTable({

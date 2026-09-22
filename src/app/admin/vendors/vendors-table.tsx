@@ -44,6 +44,7 @@ function formatGallons(n: number) {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
+    timeZone: "UTC",
     month: "short",
     day: "numeric",
     year: "numeric",

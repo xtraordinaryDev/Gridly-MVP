@@ -85,7 +85,7 @@ export function MessageThread({
                     {m.isBroadcast ? <Megaphone className="size-3" /> : null}
                     <span className="font-medium">{m.senderName}</span>
                     {m.isBroadcast ? <span>· to all suppliers</span> : null}
-                    <span>· {fmt(m.createdAt)}</span>
+                    <span suppressHydrationWarning>· {fmt(m.createdAt)}</span>
                   </p>
                   <p className="whitespace-pre-wrap">{m.body}</p>
                 </div>

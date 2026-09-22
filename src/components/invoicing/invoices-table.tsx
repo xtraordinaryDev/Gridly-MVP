@@ -31,6 +31,7 @@ const OPEN: InvoiceStatus[] = ["sent", "viewed", "disputed", "partially_paid"]
 
 function formatDate(value: string) {
   return new Date(value + "T12:00:00Z").toLocaleDateString("en-US", {
+    timeZone: "UTC",
     month: "short",
     day: "numeric",
     year: "numeric",

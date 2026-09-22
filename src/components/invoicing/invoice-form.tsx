@@ -324,7 +324,8 @@ export function InvoiceForm({
                   {contractUnbilled.map((d) => (
                     <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
                       <span className="min-w-0 truncate text-muted-foreground">
-                        {new Date(d.deliveredAt + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {d.gallons.toLocaleString()} gal · {d.ticketNumber ?? "no ticket"} · {d.siteAddress}
+                        {new Date(d.deliveredAt + "T12:00:00Z").toLocaleDateString("en-US", {
+    timeZone: "UTC", month: "short", day: "numeric" })} · {d.gallons.toLocaleString()} gal · {d.ticketNumber ?? "no ticket"} · {d.siteAddress}
                       </span>
                       <Button type="button" size="sm" variant="outline" onClick={() => addDelivery(d)} className="gap-1"><Plus className="size-3.5" />Add</Button>
                     </li>
