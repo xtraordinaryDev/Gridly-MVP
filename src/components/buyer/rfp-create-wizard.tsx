@@ -18,6 +18,8 @@ import {
   PRICING_MODE_LABEL,
 } from "@/lib/schemas/rfp-wizard"
 import { AttachmentsField } from "@/components/attachments"
+import { RfpDraftBox } from "@/components/ai/rfp-draft-box"
+import { SupplierSuggestions } from "@/components/ai/supplier-suggestions"
 import {
   DELIVERY_CAPABILITIES,
   SPECIAL_CERTIFICATIONS,
@@ -230,6 +232,16 @@ export function RfpCreateWizard({
 
         {step === 0 && (
           <div className="space-y-4">
+            {!initial ? (
+              <RfpDraftBox
+                onDraft={(d) => {
+                  const { assumptions: _a, ...values } = d
+                  void _a
+                  const current = form.getValues()
+                  form.reset({ ...current, ...values, attachments: current.attachments ?? [], deliveryAddresses: current.deliveryAddresses, deliveryDates: current.deliveryDates })
+                }}
+              />
+            ) : null}
             <FormField
               control={form.control}
               name="title"
@@ -686,11 +698,24 @@ export function RfpCreateWizard({
                 Select suppliers ({form.getValues("selectedVendorIds").length})
               </Button>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                {matched.length} matching suppliers suggested
-              </p>
+              <SupplierSuggestions
+                snapshot={{
+                  title: watchAll.title ?? "",
+                  description: watchAll.description ?? "",
+                  fuelType: watchAll.fuelType ?? "",
+                  quantityGallons: Number(watchAll.quantityGallons) || 0,
+                  urgency: watchAll.urgency ?? "standard",
+                  pricingMode: watchAll.pricingMode ?? "fixed",
+                  states: watchAll.deliveryStates ?? [],
+                  capabilities: watchAll.requiredCapabilities ?? [],
+                  certifications: (watchAll.requiredCertifications ?? []).filter((c) => c !== "None"),
+                }}
+                candidates={matched}
+                selectedIds={watchAll.selectedVendorIds ?? []}
+                onSelectionChange={(ids) => form.setValue("selectedVendorIds", ids, { shouldValidate: true })}
+              />
             )}
-            <ul className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-border p-3">
+            <ul className={cn("max-h-48 space-y-2 overflow-y-auto rounded-lg border border-border p-3", watchAll.supplierInviteMode === "auto" && "hidden")}>
               {(watchAll.supplierInviteMode === "auto" ? matched : vendors.filter((v) =>
                 form.getValues("selectedVendorIds").includes(v.id)
               )).map((v) => (

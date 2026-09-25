@@ -11,6 +11,8 @@ import { AttachmentList } from "@/components/attachments"
 import { RfpQandA } from "@/components/messages/message-thread"
 import type { MessageView, ThreadParty } from "@/lib/data/messages"
 import type { VendorPerformance } from "@/lib/data/ratings"
+import type { BidBrief } from "@/lib/ai/schemas"
+import { BidBriefPanel } from "@/components/ai/bid-brief"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -40,11 +42,13 @@ export function RfpDetailView({
   defaultTab = "overview",
   qa,
   performance,
+  brief = null,
 }: {
   rfp: BuyerRfpDetail
   defaultTab?: string
   qa?: { parties: ThreadParty[]; activeVendorId: string | null; messages: MessageView[] }
   performance?: Record<string, VendorPerformance>
+  brief?: { brief: BidBrief; generatedAt: string } | null
 }) {
   const canAward = rfp.status === "published" || rfp.status === "closed"
 
@@ -219,6 +223,7 @@ export function RfpDetailView({
         </TabsContent>
 
         <TabsContent value="responses" className="mt-6">
+          <BidBriefPanel rfpId={rfp.id} initial={brief} responseCount={rfp.responses.length} />
           <RfpComparisonTable rfp={rfp} canAward={canAward} performance={performance} />
         </TabsContent>
 

@@ -11,6 +11,7 @@
     "seed:invoices": "tsx scripts/seed-invoices.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@base-ui/react": "^1.5.0",
     "@hookform/resolvers": "^5.4.0",
     "@radix-ui/react-slot": "^1.2.4",

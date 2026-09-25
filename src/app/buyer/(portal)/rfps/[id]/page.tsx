@@ -6,6 +6,7 @@ import { requireBuyer } from "@/lib/auth"
 import { getBuyerRfpDetail } from "@/lib/data/rfps"
 import { listRfpThreadParties, listThread } from "@/lib/data/messages"
 import { listVendorPerformance } from "@/lib/data/ratings"
+import { getStoredBrief } from "@/lib/data/ai-briefs"
 import { RfpDetailView } from "@/components/buyer/rfp-detail-view"
 
 export default async function BuyerRfpDetailPage({
@@ -22,10 +23,11 @@ export default async function BuyerRfpDetailPage({
   if (!rfp) notFound()
   const viewer = { role: "buyer" as const, id: profile.id }
   const activeVendorId = vendor && rfp.invitations.some((i) => i.vendorId === vendor) ? vendor : null
-  const [parties, messages, perfMap] = await Promise.all([
+  const [parties, messages, perfMap, stored] = await Promise.all([
     listRfpThreadParties(profile.id, id),
     listThread(viewer, "rfp", id, activeVendorId),
     listVendorPerformance(rfp.responses.map((r) => r.vendorId)),
+    getStoredBrief(id, profile.id),
   ])
   const performance = Object.fromEntries(perfMap)
 
@@ -38,7 +40,7 @@ export default async function BuyerRfpDetailPage({
         <ArrowLeft className="size-4" />
         Back to RFPs
       </Link>
-      <RfpDetailView rfp={rfp} defaultTab={tab === "qa" ? "qa" : "overview"} qa={{ parties, activeVendorId, messages }} performance={performance} />
+      <RfpDetailView rfp={rfp} defaultTab={tab && ["overview", "invited", "responses", "qa", "activity"].includes(tab) ? tab : "overview"} qa={{ parties, activeVendorId, messages }} performance={performance} brief={stored ? { brief: stored.brief, generatedAt: stored.generatedAt } : null} />
     </div>
   )
 }
