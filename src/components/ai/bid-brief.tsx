@@ -43,7 +43,7 @@ export function BidBriefPanel({ rfpId, initial, responseCount }: { rfpId: string
           <AiBadge />
         </div>
         <div className="flex items-center gap-2">
-          {state ? <span className="text-xs text-muted-foreground">Generated {new Date(state.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span> : null}
+          {state ? <span className="text-xs text-muted-foreground" suppressHydrationWarning>Generated {new Date(state.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC" })} UTC</span> : null}
           <Button type="button" size="sm" variant={state ? "ghost" : "default"} disabled={isPending} onClick={run} className="gap-1.5">
             {state ? <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} /> : <Sparkles className="size-3.5" />}
             {state ? "Regenerate" : `Analyze ${responseCount} bid${responseCount === 1 ? "" : "s"}`}
