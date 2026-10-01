@@ -146,25 +146,59 @@ function hashSeed(id: string) {
   return Math.abs(h)
 }
 
-function enrichPublicProfile(vendor: DirectoryVendor, row?: Record<string, unknown>): VendorPublicProfile {
+type ComplianceDocRow = { document_type: string; expires_at: string | null }
+
+const COMPLIANCE_LABEL = {
+  w9: "W-9 on file",
+  coi: "Certificate of insurance",
+  distributor_license: "Distributor license",
+} as const
+
+/** Real compliance attestations from the vendor's uploaded documents. Missing documents are simply not listed. */
+function complianceFromDocuments(docs: ComplianceDocRow[]): VendorPublicProfile["compliance"] {
+  const out: VendorPublicProfile["compliance"] = []
+  for (const type of ["w9", "coi", "distributor_license"] as const) {
+    const doc = docs
+      .filter((d) => d.document_type === type)
+      .sort((a, b) => ((b.expires_at ?? "") > (a.expires_at ?? "") ? 1 : -1))[0]
+    if (!doc) continue
+    let status: VendorPublicProfile["compliance"][number]["status"] = "valid"
+    if (doc.expires_at) {
+      const days = (new Date(doc.expires_at).getTime() - Date.now()) / 86400000
+      status = days < 0 ? "expired" : days <= 60 ? "expires_soon" : "valid"
+    }
+    out.push({ type, label: COMPLIANCE_LABEL[type], status, expiresAt: doc.expires_at })
+  }
+  return out
+}
+
+/**
+ * Builds the public profile. With a live `row` (and the vendor's documents)
+ * only real data is shown — anything the vendor hasn't provided is empty or
+ * "Contact supplier". Without a row (preview mode's mock directory) the seeded
+ * placeholders below fill the page in so it's demoable.
+ */
+function enrichPublicProfile(vendor: DirectoryVendor, row?: Record<string, unknown>, documents: ComplianceDocRow[] = []): VendorPublicProfile {
   const seed = hashSeed(vendor.id)
   const pick = <T,>(arr: readonly T[], offset = 0) => arr[(seed + offset) % arr.length]
   const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
 
   const stateInc =
     (row?.state_of_incorporation as string) ?? vendor.states[0] ?? "Minnesota"
-  const entityType = (row?.entity_type as string) ?? pick(ENTITY_TYPES)
+  const entityType = row ? ((row.entity_type as string) ?? "Not specified") : pick(ENTITY_TYPES)
   const orgTypes = arr(row?.organization_type).length
     ? arr(row?.organization_type)
-    : [pick(ORGANIZATION_TYPES), pick(ORGANIZATION_TYPES, 1)].filter(
-        (v, i, a) => a.indexOf(v) === i
-      )
+    : row
+      ? []
+      : [pick(ORGANIZATION_TYPES), pick(ORGANIZATION_TYPES, 1)].filter(
+          (v, i, a) => a.indexOf(v) === i
+        )
 
   const certs: string[] = []
   if (vendor.specialCertification && vendor.specialCertification !== "None") {
     certs.push(vendor.specialCertification)
   }
-  if (seed % 3 === 0) certs.push("Veteran-Owned")
+  if (!row && seed % 3 === 0) certs.push("Veteran-Owned")
 
   const verified = new Date(vendor.verifiedAt)
   const lastReviewed = new Date(verified)
@@ -200,17 +234,17 @@ function enrichPublicProfile(vendor: DirectoryVendor, row?: Record<string, unkno
     tagline: `${stateInc} · ${entityType}`,
     stateOfIncorporation: stateInc,
     entityType,
-    yearFounded: (row?.year_founded as number) ?? 1985 + (seed % 35),
+    yearFounded: row ? ((row.year_founded as number) ?? null) : 1985 + (seed % 35),
     organizationTypes: orgTypes,
     certifications: certs,
-    websiteUrl: (row?.website_url as string) ?? `https://www.${vendor.companyName.toLowerCase().replace(/[^a-z0-9]+/g, "")}.com`,
-    lastReviewedAt: lastReviewed.toISOString(),
-    brandsOffered: (row?.brands_offered as string)?.split(",").map((s) => s.trim()).filter(Boolean) ?? [
+    websiteUrl: row ? ((row.website_url as string) ?? null) : `https://www.${vendor.companyName.toLowerCase().replace(/[^a-z0-9]+/g, "")}.com`,
+    lastReviewedAt: row ? vendor.verifiedAt : lastReviewed.toISOString(),
+    brandsOffered: (row?.brands_offered as string)?.split(",").map((s) => s.trim()).filter(Boolean) ?? (row ? [] : [
       "Shell",
       "Chevron",
       "Exxon",
-    ].slice(0, 1 + (seed % 3)),
-    terminals: ((row?.terminals_available as string) ?? "Chicago, IL; Minneapolis, MN; Des Moines, IA")
+    ].slice(0, 1 + (seed % 3))),
+    terminals: ((row?.terminals_available as string) ?? (row ? "" : "Chicago, IL; Minneapolis, MN; Des Moines, IA"))
       .split(/[;,]/)
       .map((s) => s.trim())
       .filter(Boolean),
@@ -218,21 +252,26 @@ function enrichPublicProfile(vendor: DirectoryVendor, row?: Record<string, unkno
       (row?.areas_owned_trucks as string) ??
       (vendor.nationwide ? "Nationwide fleet" : vendor.states.slice(0, 3).join(", ")),
     areasSubcontracted:
-      (row?.areas_subcontracted as string) ?? "Remote / overflow coverage via partner carriers",
+      (row?.areas_subcontracted as string) ?? (row ? "Not specified" : "Remote / overflow coverage via partner carriers"),
     techCapabilities: arr(row?.additional_services).length
       ? arr(row?.additional_services)
-      : ADDITIONAL_SERVICES.slice(0, 2 + (seed % 4)),
-    standardLeadTime: (row?.standard_order_lead_time as string) ?? "24–48 hours",
+      : row
+        ? []
+        : ADDITIONAL_SERVICES.slice(0, 2 + (seed % 4)),
+    standardLeadTime: (row?.standard_order_lead_time as string) ?? (row ? "Contact supplier" : "24–48 hours"),
     operatingHours: arr(row?.operating_hours).length
       ? arr(row?.operating_hours)
-      : [pick(OPERATING_HOURS), pick(OPERATING_HOURS, 2)],
-    pricingBasis: "OPIS GCA 10am",
-    emergencyRetainer: seed % 2 === 0 ? "Yes" : "Possibly",
+      : row
+        ? []
+        : [pick(OPERATING_HOURS), pick(OPERATING_HOURS, 2)],
+    pricingBasis: row ? "Contact supplier" : "OPIS GCA 10am",
+    emergencyRetainer: row ? "Contact supplier" : seed % 2 === 0 ? "Yes" : "Possibly",
     emergencyResponseTimes:
       (row?.emergency_response_times as string) ?? emergencyLabel,
-    emergencyPricingTiers:
-      "Standard emergency surcharge · After-hours dispatch fee · Retainer pricing available",
-    compliance: [
+    emergencyPricingTiers: row
+      ? "Contact supplier for emergency pricing."
+      : "Standard emergency surcharge · After-hours dispatch fee · Retainer pricing available",
+    compliance: row ? complianceFromDocuments(documents) : [
       {
         type: "w9",
         label: "W-9 on file",
@@ -252,7 +291,7 @@ function enrichPublicProfile(vendor: DirectoryVendor, row?: Record<string, unkno
         expiresAt: licenseExpiry.toISOString(),
       },
     ],
-    contacts: [
+    contacts: row ? [] : [
       {
         role: "Sales",
         name: "Jordan Ellis",
@@ -295,12 +334,18 @@ export async function getVendorPublicProfile(vendorId: string): Promise<VendorPu
     .eq("is_verified", true)
     .maybeSingle()
 
-  if (!data) {
-    const vendor = MOCK_DIRECTORY.find((v) => v.id === vendorId)
-    return vendor ? enrichPublicProfile(vendor) : null
-  }
+  if (!data) return null
 
-  return enrichPublicProfile(rowToDirectory(data as Record<string, unknown>), data as Record<string, unknown>)
+  const { data: docs } = await supabase
+    .from("vendor_documents")
+    .select("document_type, expires_at")
+    .eq("vendor_id", vendorId)
+
+  return enrichPublicProfile(
+    rowToDirectory(data as Record<string, unknown>),
+    data as Record<string, unknown>,
+    (docs ?? []) as ComplianceDocRow[]
+  )
 }
 
 export async function listVerifiedVendors(): Promise<DirectoryVendor[]> {
@@ -313,6 +358,6 @@ export async function listVerifiedVendors(): Promise<DirectoryVendor[]> {
     .eq("is_verified", true)
     .order("company_name")
 
-  if (!data?.length) return MOCK_DIRECTORY
-  return data.map(rowToDirectory)
+  // No mock fallback in live mode: an empty directory is the truth, not a demo.
+  return (data ?? []).map(rowToDirectory)
 }

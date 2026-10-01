@@ -21,6 +21,7 @@ if (typeof globalThis.WebSocket === "undefined") {
 }
 
 import { BUYERS } from "./seed-demo-data"
+import { assertDemoEnvironment } from "./lib/guard"
 
 const VENDOR_LOGIN_EMAIL = "vendor@gridlink-demo.example.com"
 
@@ -200,6 +201,7 @@ async function seedSites(sb: SB, buyerIds: string[]) {
 
 async function main() {
   loadEnv()
+  assertDemoEnvironment()
   const sb = admin()
   console.log("\nGridLink invoicing seed\n")
 

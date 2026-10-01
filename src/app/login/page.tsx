@@ -3,6 +3,7 @@ import Link from "next/link"
 import { Zap } from "lucide-react"
 
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { isDemoModeEnabled } from "@/lib/env"
 import { LoginForm } from "./login-form"
 
 export const metadata: Metadata = {
@@ -28,7 +29,7 @@ export default function LoginPage() {
             Access your GridLink buyer, vendor, or admin portal.
           </p>
           <div className="mt-6">
-            <LoginForm preview={!isSupabaseConfigured()} />
+            <LoginForm preview={!isSupabaseConfigured()} showDemo={isDemoModeEnabled()} />
           </div>
         </div>
       </div>

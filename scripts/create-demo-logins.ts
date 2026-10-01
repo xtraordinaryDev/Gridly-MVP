@@ -21,6 +21,7 @@ if (typeof globalThis.WebSocket === "undefined") {
 }
 
 import { DEMO_PASSWORD } from "./seed-demo-data"
+import { assertDemoEnvironment } from "./lib/guard"
 
 const ADMIN_EMAIL = "admin@gridlink-demo.example.com"
 const VENDOR_EMAIL = "vendor@gridlink-demo.example.com"
@@ -96,6 +97,7 @@ async function ensureUser(
 
 async function main() {
   loadEnv()
+  assertDemoEnvironment()
   const sb = supabaseAdmin()
 
   console.log("\nGridLink — admin + vendor logins\n")

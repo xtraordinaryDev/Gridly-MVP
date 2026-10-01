@@ -76,7 +76,7 @@ export default async function VendorDashboardPage() {
   const [opportunities, oppList, activity, inv, em, docs, perf, orders] = await Promise.all([
     getOpportunities(),
     listVendorOpportunities(vendorId),
-    getVendorActivity(),
+    getVendorActivity(vendorId),
     getVendorInvoiceStats(vendorId),
     getEmissionsStats({ role: "vendor", id: vendorId }),
     listVendorDocuments(vendorId),

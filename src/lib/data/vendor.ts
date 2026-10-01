@@ -351,8 +351,44 @@ export async function getOpportunity(id: string): Promise<Opportunity | null> {
   }
 }
 
-export async function getVendorActivity(): Promise<ActivityEvent[]> {
-  return MOCK_ACTIVITY
+/**
+ * Recent activity for a vendor: invitations received/viewed and bids
+ * submitted. RLS scopes the queries to the signed-in vendor. Preview mode
+ * returns sample events; a vendor with no linked record gets an empty feed.
+ */
+export async function getVendorActivity(vendorId?: string | null, limit = 8): Promise<ActivityEvent[]> {
+  if (!isSupabaseConfigured()) return MOCK_ACTIVITY
+  if (!vendorId) return []
+
+  const supabase = await createClient()
+  const [{ data: invites }, { data: bids }] = await Promise.all([
+    supabase.from("rfp_invitations").select("id, rfp_id, invited_at, viewed_at").eq("vendor_id", vendorId).order("invited_at", { ascending: false }).limit(20),
+    supabase.from("rfp_responses").select("id, rfp_id, submitted_at").eq("vendor_id", vendorId).order("submitted_at", { ascending: false }).limit(20),
+  ])
+
+  const rfpIds = [...new Set([...(invites ?? []), ...(bids ?? [])].map((r) => r.rfp_id as string))]
+  if (!rfpIds.length) return []
+  const { data: rfps } = await supabase.from("rfps").select("id, title, buyer_id").in("id", rfpIds)
+  const buyerIds = [...new Set((rfps ?? []).map((r) => r.buyer_id as string))]
+  const { data: buyers } = buyerIds.length
+    ? await supabase.from("profiles").select("id, company_name").in("id", buyerIds)
+    : { data: [] as { id: string; company_name: string | null }[] }
+
+  const title = new Map((rfps ?? []).map((r) => [r.id as string, r.title as string]))
+  const buyerOf = new Map((rfps ?? []).map((r) => [r.id as string, r.buyer_id as string]))
+  const buyerName = new Map((buyers ?? []).map((b) => [b.id as string, (b.company_name as string) ?? "a buyer"]))
+
+  const events: ActivityEvent[] = []
+  for (const i of invites ?? []) {
+    const t = title.get(i.rfp_id as string) ?? "RFP"
+    const by = buyerName.get(buyerOf.get(i.rfp_id as string) ?? "") ?? "a buyer"
+    events.push({ id: `inv-${i.id}`, type: "invited", label: `Invited to “${t}” by ${by}`, date: i.invited_at as string })
+    if (i.viewed_at) events.push({ id: `view-${i.id}`, type: "viewed", label: `Viewed “${t}”`, date: i.viewed_at as string })
+  }
+  for (const b of bids ?? []) {
+    events.push({ id: `bid-${b.id}`, type: "submitted", label: `Submitted bid for “${title.get(b.rfp_id as string) ?? "RFP"}”`, date: b.submitted_at as string })
+  }
+  return events.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, limit)
 }
 
 export async function getNotificationPrefs(

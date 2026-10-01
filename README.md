@@ -1,38 +1,79 @@
-# Gridly-MVP
+# GridLink
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+B2B marketplace connecting fuel buyers (fleets, facilities, municipalities) with
+verified fuel suppliers: RFPs and bids, awarded contracts, orders and
+deliveries, invoicing, messaging, compliance documents, emissions tracking, and
+AI assistance for drafting RFPs, ranking suppliers and comparing bids.
 
-## Getting Started
+Next.js 16 (App Router, Turbopack) · Supabase (Postgres, Auth, Storage) ·
+Resend · Anthropic · Vercel.
 
-First, run the development server:
+> This repo's Next.js version has conventions that differ from older releases.
+> Read `node_modules/next/dist/docs/` before changing framework-level code.
+
+## Local setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local      # fill in Supabase + any optional keys
+npm run dev                     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Without Supabase credentials the app runs in **preview mode** with in-memory
+mock data, so the UI is browsable but nothing persists.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Optional integrations
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Feature | Env | Where to get it |
+|---|---|---|
+| Transactional email | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | resend.com (verify a domain for real delivery) |
+| AI features | `ANTHROPIC_API_KEY` | console.anthropic.com |
+| Area fuel prices | `EIA_API_KEY` | eia.gov/opendata (free) |
+| Nearby station prices | `GOOGLE_MAPS_API_KEY` | Google Cloud — enable Geocoding API + Places API (New) |
 
-## Learn More
+## Database
 
-To learn more about Next.js, take a look at the following resources:
+Migrations are in `supabase/migrations/` and apply in filename order
+(`0001` → `0015`). Apply them with the Supabase SQL Editor or MCP
+`apply_migration`. See [docs/PRODUCTION.md](docs/PRODUCTION.md) for which
+migrations are applied where.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Demo data (local / staging only)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# .env.local must have NEXT_PUBLIC_DEMO_MODE=true or the scripts refuse to run
+npm run seed:demo                          # buyers, vendors, RFPs, bids
+npx tsx scripts/create-demo-logins.ts      # admin + vendor logins
+npm run seed:invoices                      # contracts, invoices, payments
+```
 
-## Deploy on Vercel
+Demo mode also shows one-click demo sign-in buttons on `/login`.
+**Never enable it in production.**
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Creating a real admin
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx tsx scripts/create-admin.ts --email you@company.com --name "Your Name"
+```
+
+## Daily cron
+
+`/api/cron/daily` (scheduled in `vercel.json`) closes expired RFPs, sends
+document-expiry and invoice reminders, and refreshes fuel prices. Run it locally:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/daily
+```
+
+## Checks
+
+```bash
+npx tsc --noEmit
+npm run lint
+npm run build
+```
+
+## Deploying
+
+Push to `main` → Vercel deploys Production. Operations, env vars and the
+production checklist: [docs/PRODUCTION.md](docs/PRODUCTION.md).

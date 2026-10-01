@@ -70,12 +70,66 @@ export async function getBuyerDashboardStats(): Promise<BuyerDashboardStats> {
 
   return {
     activeRfps: active,
-    suppliersInNetwork: vendors.length || MOCK_STATS.suppliersInNetwork,
+    suppliersInNetwork: vendors.length,
     bidsReceived: responses.count ?? 0,
     awardedContracts: awarded,
   }
 }
 
-export async function getBuyerRfpActivity(): Promise<RfpActivityEvent[]> {
-  return MOCK_ACTIVITY
+/**
+ * Recent RFP activity for the signed-in buyer, derived from their RFPs and the
+ * bids on them (RLS scopes both queries). Preview mode returns sample events.
+ */
+export async function getBuyerRfpActivity(limit = 8): Promise<RfpActivityEvent[]> {
+  if (!isSupabaseConfigured()) return MOCK_ACTIVITY
+
+  const supabase = await createClient()
+  const { data: rfps } = await supabase
+    .from("rfps")
+    .select("id, title, status, published_at, bid_due_date")
+    .not("published_at", "is", null)
+    .order("published_at", { ascending: false })
+    .limit(20)
+  if (!rfps?.length) return []
+
+  const ids = rfps.map((r) => r.id as string)
+  const { data: bids } = await supabase
+    .from("rfp_responses")
+    .select("id, rfp_id, submitted_at")
+    .in("rfp_id", ids)
+    .order("submitted_at", { ascending: false })
+    .limit(40)
+
+  const titleOf = new Map(rfps.map((r) => [r.id as string, r.title as string]))
+  const events: RfpActivityEvent[] = []
+
+  for (const r of rfps) {
+    events.push({ id: `pub-${r.id}`, type: "published", label: `Published “${r.title}”`, date: r.published_at as string })
+    const due = r.bid_due_date as string | null
+    if (due && (r.status === "closed" || r.status === "awarded") && new Date(due).getTime() <= Date.now()) {
+      events.push({ id: `closed-${r.id}`, type: "closed", label: `Closed bidding on “${r.title}”`, date: due })
+    }
+  }
+
+  // Collapse bids per RFP per day so a busy RFP reads as "3 new bids", not 3 rows.
+  const bidGroups = new Map<string, { rfpId: string; count: number; date: string }>()
+  for (const b of bids ?? []) {
+    const day = (b.submitted_at as string).slice(0, 10)
+    const key = `${b.rfp_id}|${day}`
+    const g = bidGroups.get(key)
+    if (g) g.count += 1
+    else bidGroups.set(key, { rfpId: b.rfp_id as string, count: 1, date: b.submitted_at as string })
+  }
+  for (const [key, g] of bidGroups) {
+    events.push({ id: `bid-${key}`, type: "bid", label: `${g.count} new bid${g.count === 1 ? "" : "s"} on “${titleOf.get(g.rfpId) ?? "RFP"}”`, date: g.date })
+  }
+
+  for (const r of rfps) {
+    if (r.status !== "awarded") continue
+    // No awarded_at column yet — the latest bid (or the deadline) is the closest timestamp we have.
+    const latestBid = (bids ?? []).find((b) => b.rfp_id === r.id)?.submitted_at as string | undefined
+    events.push({ id: `award-${r.id}`, type: "awarded", label: `Awarded “${r.title}”`, date: latestBid ?? (r.bid_due_date as string) ?? (r.published_at as string) })
+  }
+
+  return events.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, limit)
 }

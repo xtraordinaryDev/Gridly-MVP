@@ -46,13 +46,15 @@ export function VendorProfileHero({ profile }: { profile: VendorPublicProfile })
                 <BookmarkPlus className="size-4" />
                 Save to List
               </Link>
-              <a
-                href={`mailto:${profile.contacts[0]?.email ?? "sales@example.com"}`}
-                className={cn(buttonVariants({ variant: "outline" }))}
-              >
-                <Mail className="size-4" />
-                Contact
-              </a>
+              {profile.contacts[0]?.email ? (
+                <a
+                  href={`mailto:${profile.contacts[0].email}`}
+                  className={cn(buttonVariants({ variant: "outline" }))}
+                >
+                  <Mail className="size-4" />
+                  Contact
+                </a>
+              ) : null}
             </div>
           </div>
         </div>

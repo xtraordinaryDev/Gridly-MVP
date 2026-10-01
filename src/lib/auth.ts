@@ -2,6 +2,17 @@ import { redirect } from "next/navigation"
 
 import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { isProductionEnv } from "@/lib/env"
+
+/**
+ * Preview mode (no Supabase credentials) is a local/dev convenience only. In
+ * production a missing credential must fail closed, not hand out demo profiles.
+ */
+function assertPreviewAllowed() {
+  if (isProductionEnv()) {
+    throw new Error("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY.")
+  }
+}
 
 export type Role = "buyer" | "vendor" | "admin"
 
@@ -67,6 +78,7 @@ export async function requireAdmin(): Promise<{
   preview: boolean
 }> {
   if (!isSupabaseConfigured()) {
+    assertPreviewAllowed()
     return { profile: PREVIEW_ADMIN, preview: true }
   }
 
@@ -88,6 +100,7 @@ export async function requireVendor(): Promise<{
   preview: boolean
 }> {
   if (!isSupabaseConfigured()) {
+    assertPreviewAllowed()
     return { profile: PREVIEW_VENDOR, preview: true }
   }
 
@@ -108,6 +121,7 @@ export async function requireBuyer(): Promise<{
   preview: boolean
 }> {
   if (!isSupabaseConfigured()) {
+    assertPreviewAllowed()
     return { profile: PREVIEW_BUYER, preview: true }
   }
 

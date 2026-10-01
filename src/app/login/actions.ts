@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { isDemoModeEnabled, isProductionEnv } from "@/lib/env"
 import { roleHomePath, type Role } from "@/lib/auth"
 import { LoginSchema } from "./schema"
 
@@ -24,6 +25,10 @@ const DEMO_ACCOUNTS: Record<Role, string> = {
  * portal; with Supabase configured it signs in as the seeded demo account.
  */
 export async function signInAsDemo(role: Role): Promise<LoginResult> {
+  // Server-side gate, not just a hidden button: the action is a public POST.
+  if (!isDemoModeEnabled()) {
+    return { ok: false, message: "Demo sign-in is not available in this environment." }
+  }
   if (!isSupabaseConfigured()) {
     return { ok: true, redirectTo: roleHomePath(role) }
   }
@@ -55,6 +60,7 @@ export async function signIn(values: unknown): Promise<LoginResult> {
   }
 
   if (!isSupabaseConfigured()) {
+    if (isProductionEnv()) return { ok: false, message: "Sign-in is temporarily unavailable." }
     return { ok: true, redirectTo: "/buyer/dashboard" }
   }
 

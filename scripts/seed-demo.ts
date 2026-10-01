@@ -16,6 +16,7 @@ if (typeof globalThis.WebSocket === "undefined") {
   ;(globalThis as Record<string, unknown>).WebSocket = ws
 }
 
+import { assertDemoEnvironment } from "./lib/guard"
 import {
   APPLICATION_DEFS,
   BUYERS,
@@ -648,6 +649,7 @@ async function seedBuyerApplications(sb: ReturnType<typeof supabaseAdmin>) {
 // ---------------------------------------------------------------------------
 async function main() {
   loadEnv()
+  assertDemoEnvironment()
   const sb = supabaseAdmin()
 
   console.log("\nGridLink demo seed\n")

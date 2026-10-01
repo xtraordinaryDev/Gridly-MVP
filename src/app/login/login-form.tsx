@@ -53,7 +53,7 @@ const DEMO_ROLES: {
   },
 ]
 
-export function LoginForm({ preview }: { preview: boolean }) {
+export function LoginForm({ preview, showDemo }: { preview: boolean; showDemo: boolean }) {
   const [isPending, startTransition] = useTransition()
   const [demoRole, setDemoRole] = useState<Role | null>(null)
 
@@ -128,6 +128,7 @@ export function LoginForm({ preview }: { preview: boolean }) {
           </Link>
         </p>
 
+        {showDemo ? (
         <div className="space-y-2 rounded-xl border border-dashed border-border bg-muted/40 p-3">
           <p className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Demo — sign in as
@@ -151,6 +152,7 @@ export function LoginForm({ preview }: { preview: boolean }) {
             ))}
           </div>
         </div>
+        ) : null}
 
         <p className="text-center text-sm text-muted-foreground">
           New buyer?{" "}

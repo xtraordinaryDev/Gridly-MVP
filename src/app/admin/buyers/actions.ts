@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { getSessionProfile } from "@/lib/auth"
+import { getSessionProfile, requireAdmin } from "@/lib/auth"
 import { sendEmail, siteUrl } from "@/lib/email"
 
 export type ActionResult = { ok: true } | { ok: false; message: string }
@@ -16,6 +16,7 @@ function revalidate(id?: string) {
 }
 
 export async function approveBuyer(id: string, notes: string): Promise<ActionResult> {
+  await requireAdmin() // server actions are public POST endpoints; the layout guard doesn't cover them
   void notes
   if (!isSupabaseConfigured()) return { ok: true }
 
@@ -62,6 +63,7 @@ export async function approveBuyer(id: string, notes: string): Promise<ActionRes
 }
 
 export async function rejectBuyer(id: string, reason: string): Promise<ActionResult> {
+  await requireAdmin()
   void reason
   if (!isSupabaseConfigured()) return { ok: true }
 
