@@ -70,7 +70,8 @@ function SiteStationsCard({ site }: { site: SiteStations }) {
         {site.stations.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">No stations with posted prices within 10 miles yet.</p>
         ) : (
-          <table className="mt-4 w-full text-sm">
+          <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr>
                 <th className="pb-1 text-left font-medium">Station</th>
@@ -91,6 +92,7 @@ function SiteStationsCard({ site }: { site: SiteStations }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </CardContent>
     </Card>

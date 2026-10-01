@@ -84,7 +84,7 @@ export function AddressCombobox({
         </span>
         <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[var(--anchor-width)] min-w-[22rem] p-0">
+      <PopoverContent align="start" className="w-[var(--anchor-width)] min-w-[min(22rem,calc(100vw-2rem))] p-0">
         <Command shouldFilter={false}>
           <CommandInput
             placeholder="Search sites or type a new address…"

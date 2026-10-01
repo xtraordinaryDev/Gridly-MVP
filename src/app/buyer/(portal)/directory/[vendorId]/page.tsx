@@ -35,7 +35,7 @@ export default async function DirectoryVendorProfilePage({
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Track record on GridLink</p>
             <PerformanceBadges className="mt-1 text-sm" avgStars={perf.avgStars} ratingCount={perf.ratingCount} onTimePct={perf.onTimePct} awardsCount={perf.awardsCount} />
           </div>
-          <dl className="grid grid-cols-3 gap-4 text-center text-sm">
+          <dl className="grid grid-cols-3 gap-2 text-center text-sm sm:gap-4">
             <div><dt className="text-xs text-muted-foreground">Deliveries</dt><dd className="font-semibold text-navy">{perf.deliveriesCount}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Active contracts</dt><dd className="font-semibold text-navy">{perf.activeContracts}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Awards</dt><dd className="font-semibold text-navy">{perf.awardsCount}</dd></div>

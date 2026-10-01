@@ -3,6 +3,7 @@ import { Zap } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
+import { SiteMobileMenu } from "@/components/marketing/site-mobile-menu"
 
 const NAV_LINKS = [
   { label: "Platform", href: "/#platform" },
@@ -48,10 +49,11 @@ export function SiteHeader() {
           </Link>
           <Link
             href="/become-a-supplier"
-            className={cn(buttonVariants({ size: "lg" }))}
+            className={cn(buttonVariants({ size: "lg" }), "hidden sm:inline-flex")}
           >
             Become a Supplier
           </Link>
+          <SiteMobileMenu links={NAV_LINKS} />
         </div>
       </div>
     </header>
