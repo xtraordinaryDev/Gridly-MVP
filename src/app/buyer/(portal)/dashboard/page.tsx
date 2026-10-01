@@ -22,6 +22,8 @@ import { MonthlyBars, PriceVsAwarded, RankedBars, SingleBars, StatTile, TargetPr
 import { getEmissionsStats } from "@/lib/data/emissions"
 import { EMISSION_FACTOR_SOURCE, formatTons } from "@/lib/emissions/factors"
 import { EmissionsTargetDialog } from "@/components/emissions/emissions-target-dialog"
+import { AreaFuelPrices } from "@/components/buyer/area-fuel-prices"
+import { getAreaFuelPrices } from "@/lib/fuel-prices"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
@@ -47,11 +49,12 @@ const ACTIVITY_ICON = {
 
 export default async function BuyerDashboardPage() {
   const { profile } = await requireBuyer()
-  const [stats, activity, inv, em] = await Promise.all([
+  const [stats, activity, inv, em, fuel] = await Promise.all([
     getBuyerDashboardStats(),
     getBuyerRfpActivity(),
     getBuyerInvoiceStats(profile.id),
     getEmissionsStats({ role: "buyer", id: profile.id }),
+    getAreaFuelPrices(profile.id),
   ])
 
   const kpis = [
@@ -136,6 +139,8 @@ export default async function BuyerDashboardPage() {
           </Link>
         ))}
       </div>
+
+      <AreaFuelPrices data={fuel} />
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">

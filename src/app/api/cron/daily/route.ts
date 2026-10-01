@@ -7,6 +7,7 @@ import { sendEmail, siteUrl } from "@/lib/email"
 import { autoCloseExpiredRfps } from "@/lib/data/rfps"
 import { DOCUMENT_TYPES } from "@/lib/data/documents"
 import { money } from "@/lib/invoicing/types"
+import { refreshRegionalFuelPrices, refreshStationFuelPrices } from "@/lib/fuel-prices"
 
 /**
  * Daily housekeeping. Call with `Authorization: Bearer $CRON_SECRET` (Vercel
@@ -24,7 +25,15 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient()
   const today = new Date().toISOString().slice(0, 10)
-  const summary = { closedRfps: 0, docReminders: 0, invoiceReminders: 0, skipped: 0 }
+  const summary = {
+    closedRfps: 0,
+    docReminders: 0,
+    invoiceReminders: 0,
+    skipped: 0,
+    fuelPrices: 0 as number | string,
+    stationCells: 0 as number | string,
+    sitesGeocoded: 0,
+  }
 
   async function once(kind: string, refId: string): Promise<boolean> {
     const { error } = await admin.from("reminder_log").insert({ kind, ref_id: refId, sent_on: today })
@@ -37,6 +46,23 @@ export async function GET(request: Request) {
     return data.user?.email ?? null
   }
   const daysUntil = (iso: string) => Math.round((new Date(iso + (iso.length === 10 ? "T12:00:00Z" : "")).getTime() - Date.now()) / 86400000)
+
+  // 0. Regional fuel price benchmarks (EIA publishes Mondays; a daily pull is one request).
+  try {
+    summary.fuelPrices = (await refreshRegionalFuelPrices()).upserted
+  } catch (err) {
+    console.error("[cron] fuel price refresh failed", err)
+    summary.fuelPrices = "failed"
+  }
+  // 0b. Station prices near buyer sites (Google Places). Capped per run to bound spend.
+  try {
+    const r = await refreshStationFuelPrices({ maxCells: Number(process.env.FUEL_STATION_DAILY_CELL_LIMIT) || 30 })
+    summary.stationCells = r.cellsRefreshed
+    summary.sitesGeocoded = r.geocoded
+  } catch (err) {
+    console.error("[cron] station price refresh failed", err)
+    summary.stationCells = "failed"
+  }
 
   // 1. Close RFPs whose bid deadline passed.
   const { count: before } = await admin.from("rfps").select("id", { count: "exact", head: true }).eq("status", "published").lt("bid_due_date", new Date().toISOString())

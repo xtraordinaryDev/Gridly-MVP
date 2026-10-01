@@ -2,6 +2,8 @@ import "server-only"
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { cellFor } from "@/lib/fuel-prices/geo"
+import { geocodeAddress, isGoogleMapsConfigured } from "@/lib/fuel-prices/google-places"
 
 export interface BuyerSite {
   id: string
@@ -65,7 +67,18 @@ export async function addBuyerSite(buyerId: string, site: { name: string; addres
     MOCK_SITES.push({ id: `site-${Date.now()}`, name: site.name, address: site.address, state: site.state ?? null })
     return { ok: true }
   }
-  const { error } = await createAdminClient().from("buyer_sites").insert({ buyer_id: buyerId, name: site.name.trim(), address: site.address.trim(), state: site.state || null })
+  const row: Record<string, unknown> = { buyer_id: buyerId, name: site.name.trim(), address: site.address.trim(), state: site.state || null }
+  // Geocode up front so station prices show on the next dashboard load. Best
+  // effort: a failure here leaves geocoded_at null and the cron retries later.
+  if (isGoogleMapsConfigured()) {
+    try {
+      const g = await geocodeAddress([row.address, row.state].filter(Boolean).join(", "))
+      Object.assign(row, { geocoded_at: new Date().toISOString() }, g ? { lat: g.lat, lng: g.lng, postal_code: g.postalCode, geo_cell: cellFor(g.lat, g.lng) } : {})
+    } catch (err) {
+      console.error("[sites] geocode failed", err)
+    }
+  }
+  const { error } = await createAdminClient().from("buyer_sites").insert(row)
   return error ? { ok: false, message: "Couldn't save the site." } : { ok: true }
 }
 
