@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Zap } from "lucide-react"
+import { GridLinkLogo } from "@/components/brand/logo"
 
 import { getSessionProfile } from "@/lib/auth"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
@@ -16,18 +16,13 @@ export default async function ResetPasswordPage() {
     <main className="flex min-h-screen flex-1 items-center justify-center bg-accent/30 px-4 py-16">
       <div className="w-full max-w-md">
         <Link href="/" className="mb-6 flex items-center justify-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-navy text-navy-foreground">
-            <Zap className="size-4 fill-brand-blue text-brand-blue" />
-          </span>
-          <span className="text-lg font-bold tracking-tight text-navy">
-            Grid<span className="text-brand-blue">Link</span>
-          </span>
+          <GridLinkLogo />
         </Link>
         <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
           {profile ? (
             <>
               <h1 className="text-xl font-bold text-navy">Choose a new password</h1>
-              <p className="mt-1.5 text-sm text-muted-foreground">At least 8 characters. You&apos;ll be signed in afterwards.</p>
+              <p className="mt-1.5 text-sm text-muted-foreground">Use at least 10 characters. You&apos;ll be signed in afterwards.</p>
               <div className="mt-6">
                 <ResetPasswordForm />
               </div>

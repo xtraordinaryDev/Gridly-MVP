@@ -21,10 +21,10 @@ import {
 } from "@/components/ui/form"
 
 const InviteSchema = z.object({
-  companyName: z.string().trim().min(1, "Company name is required"),
-  contactName: z.string().trim().min(1, "Contact name is required"),
-  email: z.email("Enter a valid email address"),
-  note: z.string().trim().max(500).optional().or(z.literal("")),
+  companyName: z.string().trim().min(1, "Company name is required").max(200, "Keep the company name under 200 characters"),
+  contactName: z.string().trim().min(1, "Contact name is required").max(120, "Keep the contact name under 120 characters"),
+  email: z.email("Enter a valid email address").max(254, "That email is too long"),
+  note: z.string().trim().max(500, "Keep the note under 500 characters").optional().or(z.literal("")),
 })
 
 type InviteValues = z.infer<typeof InviteSchema>
@@ -44,7 +44,7 @@ export function InviteForm() {
       const res = await inviteSupplier(values)
       if (res.ok) {
         setLink(res.registrationUrl)
-        toast.success("Invitation created. Onboarding link is ready to share.")
+        toast.success("Invitation sent. The registration link is ready to share.")
         form.reset()
       } else {
         toast.error(res.message)
@@ -71,8 +71,8 @@ export function InviteForm() {
             Registration link ready
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Share this token-gated link with the supplier. (Email delivery is
-            wired up in Phase 7.)
+            We&apos;ve emailed this link to the supplier. You can also share it
+            directly — it&apos;s the only credential they need to register.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <code className="flex-1 truncate rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground">
@@ -153,15 +153,16 @@ export function InviteForm() {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>
-                  Personal note{" "}
+                  Internal note{" "}
                   <span className="font-normal text-muted-foreground">
-                    (optional)
+                    (optional, not sent to the supplier)
                   </span>
                 </FormLabel>
                 <FormControl>
                   <Textarea
                     rows={3}
-                    placeholder="Add a short note that will accompany the invitation email."
+                    placeholder="Why you're inviting them — saved to the application's activity log for the GridLink team."
+                    maxLength={500}
                     {...field}
                   />
                 </FormControl>

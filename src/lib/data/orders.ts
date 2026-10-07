@@ -1,5 +1,7 @@
 import "server-only"
 
+import { isBolPath } from "@/lib/storage/paths"
+
 import { format } from "date-fns"
 
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -244,9 +246,26 @@ export async function createOrder(buyerId: string, input: OrderInput): Promise<R
     return { ok: true, orderId: id }
   }
   const admin = createAdminClient()
-  const { data: c } = await admin.from("contracts").select("id, buyer_id, vendor_id, title, is_demo, status").eq("id", input.contractId).eq("buyer_id", buyerId).maybeSingle()
+  const { data: c } = await admin.from("contracts").select("id, buyer_id, vendor_id, title, is_demo, status, quantity_gallons").eq("id", input.contractId).eq("buyer_id", buyerId).maybeSingle()
   if (!c) return { ok: false, message: "Contract not found." }
   if (c.status !== "active") return { ok: false, message: "This contract is no longer active." }
+
+  // The awarded price is tied to the contracted volume: don't let orders run past it.
+  const contracted = Number(c.quantity_gallons) || 0
+  if (contracted > 0) {
+    const { data: prior } = await admin.from("orders").select("gallons").eq("contract_id", c.id).neq("status", "cancelled")
+    const alreadyOrdered = (prior ?? []).reduce((s, o) => s + (Number(o.gallons) || 0), 0)
+    const remaining = Math.max(0, contracted - alreadyOrdered)
+    if (input.gallons > remaining) {
+      return {
+        ok: false,
+        message: remaining > 0
+          ? `Only ${remaining.toLocaleString("en-US")} gallons remain on this contract (${contracted.toLocaleString("en-US")} contracted).`
+          : `All ${contracted.toLocaleString("en-US")} contracted gallons have already been ordered. Start a new RFP for more volume.`,
+      }
+    }
+  }
+
   const { data, error } = await admin.from("orders").insert({
     contract_id: c.id, buyer_id: buyerId, vendor_id: c.vendor_id, site_address: input.siteAddress.trim(), gallons: input.gallons,
     window_start: input.windowStart, window_end: input.windowEnd, urgency: input.urgency, notes: input.notes?.trim() || null, is_demo: Boolean(c.is_demo),
@@ -308,11 +327,32 @@ export async function cancelOrder(actor: Viewer, orderId: string, reason?: strin
     return { ok: true }
   }
   const admin = createAdminClient()
-  const { data: o } = await admin.from("orders").select("id, status, buyer_id, vendor_id").eq("id", orderId).maybeSingle()
+  const { data: o } = await admin.from("orders").select("id, status, buyer_id, vendor_id, contract_id, site_address, gallons").eq("id", orderId).maybeSingle()
   if (!o || !isParty({ buyerId: o.buyer_id as string, vendorId: o.vendor_id as string }, actor)) return { ok: false, message: "Order not found." }
   if (o.status === "delivered") return { ok: false, message: "Delivered orders can't be cancelled." }
+  if (o.status === "cancelled") return { ok: false, message: "This order is already cancelled." }
   const { error } = await admin.from("orders").update({ status: "cancelled", cancelled_reason: reason?.trim() || null, updated_at: new Date().toISOString() }).eq("id", orderId)
-  return error ? { ok: false, message: "Couldn't cancel the order." } : { ok: true }
+  if (error) return { ok: false, message: "Couldn't cancel the order." }
+
+  // Tell the other party — the dialog promises they'll see it.
+  const cancelledByVendor = actor.role === "vendor"
+  const to = cancelledByVendor ? await emailForProfile(o.buyer_id as string) : await vendorEmail(o.vendor_id as string)
+  if (to) {
+    const { data: c } = await admin.from("contracts").select("title").eq("id", o.contract_id as string).maybeSingle()
+    await sendEmail({
+      to,
+      template: "order-event",
+      data: {
+        recipientName: "there",
+        headline: "Fuel order cancelled",
+        intro: `${cancelledByVendor ? "Your supplier" : "The buyer"} cancelled an order on ${(c?.title as string) ?? "your contract"}.`,
+        rows: [["Site", o.site_address as string], ["Gallons", Number(o.gallons).toLocaleString("en-US")], ["Reason", reason?.trim() || "No reason given"]],
+        ctaLabel: "View orders",
+        ctaUrl: `${siteUrl()}/${cancelledByVendor ? "buyer" : "vendor"}/orders`,
+      },
+    })
+  }
+  return { ok: true }
 }
 
 export async function logDelivery(vendorId: string, input: DeliveryInput): Promise<Result<{ deliveryId: string }>> {
@@ -336,8 +376,17 @@ export async function logDelivery(vendorId: string, input: DeliveryInput): Promi
     const { data: o } = await admin.from("orders").select("*").eq("id", input.orderId).eq("contract_id", c.id).maybeSingle()
     if (!o) return { ok: false, message: "Order not found." }
     if (o.status === "delivered" || o.status === "cancelled") return { ok: false, message: "That order is already closed." }
+    // Small overages are normal (tank top-offs); several times the order is a typo.
+    const ordered = Number(o.gallons) || 0
+    if (ordered > 0 && input.gallons > ordered * 1.25) {
+      return { ok: false, message: `${input.gallons.toLocaleString("en-US")} gallons is far more than the ${ordered.toLocaleString("en-US")} ordered. Check the quantity.` }
+    }
     order = o
     onTime = input.deliveredAt <= (o.window_end as string)
+  }
+  // A BOL must be a file uploaded for this contract, not an arbitrary storage path.
+  if (input.bolPath && !isBolPath(input.bolPath, c.id as string)) {
+    return { ok: false, message: "The attached BOL isn't valid for this contract. Upload it again." }
   }
   const { data, error } = await admin.from("deliveries").insert({
     order_id: order?.id ?? null, contract_id: c.id, buyer_id: c.buyer_id, vendor_id: vendorId, delivered_at: input.deliveredAt, site_address: input.siteAddress.trim(),
@@ -354,14 +403,15 @@ export async function logDelivery(vendorId: string, input: DeliveryInput): Promi
 }
 
 /** Link deliveries to an invoice (called by the invoice module after lines are saved). */
-export async function markDeliveriesBilled(deliveryIds: string[], invoiceId: string | null): Promise<void> {
+export async function markDeliveriesBilled(deliveryIds: string[], invoiceId: string | null, scope: { vendorId: string; contractId: string }): Promise<void> {
   const ids = deliveryIds.filter(Boolean)
   if (!ids.length) return
   if (!isSupabaseConfigured()) {
-    for (const d of mock().deliveries) if (ids.includes(d.id)) d.invoiceId = invoiceId
+    for (const d of mock().deliveries) if (ids.includes(d.id) && d.vendorId === scope.vendorId && d.contractId === scope.contractId) d.invoiceId = invoiceId
     return
   }
-  await createAdminClient().from("deliveries").update({ invoice_id: invoiceId }).in("id", ids)
+  // Scoped to the invoicing vendor's own contract: an invoice line can't claim someone else's delivery.
+  await createAdminClient().from("deliveries").update({ invoice_id: invoiceId }).in("id", ids).eq("vendor_id", scope.vendorId).eq("contract_id", scope.contractId)
 }
 
 export async function unbillDeliveriesForInvoice(invoiceId: string): Promise<void> {

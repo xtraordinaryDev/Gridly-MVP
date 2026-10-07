@@ -2,7 +2,10 @@ import { z } from "zod"
 
 export const CreateBuyerAccountSchema = z
   .object({
-    password: z.string().min(8, "Use at least 8 characters"),
+    password: z
+      .string()
+      .min(10, "Use at least 10 characters")
+      .max(72, "Use 72 characters or fewer"),
     confirmPassword: z.string().min(1, "Please confirm your password"),
   })
   .refine((data) => data.password === data.confirmPassword, {

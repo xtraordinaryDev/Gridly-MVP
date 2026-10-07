@@ -46,8 +46,8 @@ export async function cancelVendorOrder(orderId: string, contractId: string, rea
 export async function logVendorDelivery(values: unknown): Promise<VendorOrderResult> {
   const parsed = LogDeliverySchema.safeParse(values)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid delivery." }
-  const { vendorId } = await ctx()
   const d = parsed.data
+  const { vendorId } = await ctx()
   const res = await logDelivery(vendorId, {
     contractId: d.contractId,
     orderId: d.orderId || null,

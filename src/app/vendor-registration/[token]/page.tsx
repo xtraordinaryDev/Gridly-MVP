@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { SiteHeader } from "@/components/marketing/site-header"
 import { SiteFooter } from "@/components/marketing/site-footer"
 import { RegistrationForm } from "./registration-form"
+import { normalizeRegistration } from "./normalize"
 
 export const metadata: Metadata = {
   title: "Vendor Registration — GridLink",
@@ -19,46 +20,86 @@ export const metadata: Metadata = {
 const VALID_STATUSES = ["pending_review", "info_requested"]
 
 type LoadResult =
-  | { state: "ok"; applicationId: string; initialData: Partial<VendorRegistration> }
-  | { state: "preview"; applicationId: string }
+  | { state: "ok"; initialData: Partial<VendorRegistration>; returning: boolean; infoRequest: string | null }
+  | { state: "preview" }
   | { state: "invalid" }
 
-function rowToInitialData(
-  row: Record<string, unknown>
-): Partial<VendorRegistration> {
-  const s = (v: unknown) => (typeof v === "string" ? v : undefined)
-  const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : undefined)
+/**
+ * Everything the form collects, read back from the application row, so a
+ * supplier returning on another device (or after "more info requested") sees
+ * what they already submitted — not just the interest-form basics.
+ */
+function rowToInitialData(row: Record<string, unknown>): Partial<VendorRegistration> {
+  const documents = (row.documents as Record<string, unknown> | null) ?? {}
+  return normalizeRegistration({
+    companyName: row.company_name,
+    corporateAddress: row.corporate_address,
+    stateOfIncorporation: row.state_of_incorporation,
+    entityType: row.entity_type,
+    organizationType: row.organization_type,
+    specialCertification: row.special_certification,
+    // The column defaults to false; only trust it once the full form has been submitted.
+    nationwide: row.submitted_at && row.entity_type ? row.nationwide : undefined,
+    usDotNumber: row.us_dot_number,
+    websiteUrl: row.website_url,
+    yearFounded: row.year_founded,
 
-  return {
-    companyName: s(row.company_name),
-    corporateAddress: s(row.corporate_address),
-    stateOfIncorporation: s(row.state_of_incorporation),
-    organizationType: arr(row.organization_type) as never,
-    nationwide: typeof row.nationwide === "boolean" ? row.nationwide : undefined,
-    usDotNumber: s(row.us_dot_number),
-    websiteUrl: s(row.website_url),
-    yearFounded:
-      typeof row.year_founded === "number" ? row.year_founded : undefined,
-    salesRepFirstName: s(row.sales_rep_first_name),
-    salesRepLastName: s(row.sales_rep_last_name),
-    salesRepEmail: s(row.sales_rep_email),
-    salesRepPhone: s(row.sales_rep_phone),
-    dispatchContactName: s(row.dispatch_contact_name),
-    dispatchPhone: s(row.dispatch_phone),
-    dispatchEmail: s(row.dispatch_email),
-    billingAddress: s(row.billing_address),
-    billingContactName: s(row.billing_contact_name),
-    billingEmail: s(row.billing_email),
-    billingPhone: s(row.billing_phone),
-    productsOffered: arr(row.products_offered) as never,
-    licensedStates: arr(row.licensed_states) as never,
-  }
+    w9Form: documents.w9Form,
+    certificateOfInsurance: documents.certificateOfInsurance,
+    distributorLicense: documents.distributorLicense,
+    companyLogo: documents.companyLogo,
+
+    salesRepFirstName: row.sales_rep_first_name,
+    salesRepLastName: row.sales_rep_last_name,
+    salesRepEmail: row.sales_rep_email,
+    salesRepPhone: row.sales_rep_phone,
+    dispatchContactName: row.dispatch_contact_name,
+    dispatchPhone: row.dispatch_phone,
+    dispatchEmail: row.dispatch_email,
+    emergencyDispatchName: row.emergency_dispatch_name,
+    emergencyDispatchPhone: row.emergency_dispatch_phone,
+    emergencyDispatchEmail: row.emergency_dispatch_email,
+
+    billingAddress: row.billing_address,
+    billingContactName: row.billing_contact_name,
+    billingEmail: row.billing_email,
+    billingPhone: row.billing_phone,
+    deliveryContactInfo: row.delivery_contact_info,
+    billingSystem: row.billing_system,
+
+    operatingHours: row.operating_hours,
+    terminalsAvailable: row.terminals_available,
+    pricingBasis: row.pricing_basis,
+    pricingBasisOther: row.pricing_basis_other,
+    areasOwnedTrucks: row.areas_owned_trucks,
+    areasSubcontracted: row.areas_subcontracted,
+    tankwagonsCount: row.tankwagons_count,
+    transportsCount: row.transports_count,
+    annualGallonsDistributed: row.annual_gallons_distributed,
+    standardOrderLeadTime: row.standard_order_lead_time,
+
+    productsOffered: row.products_offered,
+    brandsOffered: row.brands_offered,
+
+    emergencyRetainerWilling: row.emergency_retainer_willing,
+    emergencyOrderLeadTime: row.emergency_order_lead_time,
+    emergencyResponseTimes: row.emergency_response_times,
+
+    deliveryCapabilities: row.delivery_capabilities,
+    additionalServices: row.additional_services,
+    otherServices: row.other_services,
+    wetHoseTicketType: row.wet_hose_ticket_type,
+    telematicsSystem: row.telematics_system,
+    dispatchSoftware: row.dispatch_software,
+
+    licensedStates: row.licensed_states,
+  })
 }
 
 async function loadApplication(token: string): Promise<LoadResult> {
   if (!isSupabaseConfigured()) {
     // Preview mode — let the form render without a backing row.
-    return { state: "preview", applicationId: `preview-${token}` }
+    return { state: "preview" }
   }
 
   try {
@@ -74,10 +115,27 @@ async function loadApplication(token: string): Promise<LoadResult> {
       return { state: "invalid" }
     }
 
+    // What the reviewer asked for, shown above the form when they sent it back.
+    let infoRequest: string | null = null
+    if (data.status === "info_requested") {
+      const { data: note } = await supabase
+        .from("application_activity_log")
+        .select("notes")
+        .eq("application_id", data.id as string)
+        .eq("action", "info_requested")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      infoRequest = ((note?.notes as string | null) ?? "").trim() || null
+    }
+
+    const initialData = rowToInitialData(data)
     return {
       state: "ok",
-      applicationId: data.id as string,
-      initialData: rowToInitialData(data),
+      initialData,
+      // A full profile is already on file (documents only arrive with the full form).
+      returning: Boolean(initialData.w9Form && initialData.certificateOfInsurance),
+      infoRequest,
     }
   } catch {
     return { state: "invalid" }
@@ -122,7 +180,6 @@ export default async function VendorRegistrationPage({
     )
   }
 
-  const applicationId = result.applicationId
   const initialData =
     result.state === "ok" ? result.initialData : undefined
 
@@ -141,8 +198,8 @@ export default async function VendorRegistrationPage({
             </h1>
             <p className="mx-auto mt-3 max-w-xl text-muted-foreground">
               Complete your verification profile below. Your progress is saved
-              automatically — you can close this tab and return any time using
-              the same link.
+              in this browser as you go — come back on the same device to
+              continue. Once you submit, it&apos;s saved to your application.
             </p>
             {result.state === "preview" ? (
               <p className="mx-auto mt-4 max-w-xl rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -152,11 +209,33 @@ export default async function VendorRegistrationPage({
             ) : null}
           </div>
 
+          {result.state === "ok" && (result.infoRequest || result.returning) ? (
+            <div className="mb-6 rounded-2xl border border-amber-300/70 bg-amber-50 p-5 text-sm text-amber-900">
+              {result.infoRequest ? (
+                <>
+                  <p className="flex items-center gap-2 font-semibold">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    The GridLink team asked for more information
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap break-words">{result.infoRequest}</p>
+                  <p className="mt-3 text-xs text-amber-800">
+                    Your earlier answers are filled in below. Update what&apos;s needed, then submit again from the Review step.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  We already have a profile on file for you. Your earlier answers are filled in below — change anything
+                  you need to and submit again from the Review step.
+                </p>
+              )}
+            </div>
+          ) : null}
+
           <RegistrationForm
             token={token}
-            applicationId={applicationId}
             previewMode={result.state === "preview"}
             initialData={initialData}
+            returning={result.state === "ok" && result.returning}
           />
         </div>
       </main>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { AlertTriangle, ChevronRight } from "lucide-react"
 
 import type { VendorOpportunityListItem } from "@/lib/rfp/types"
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table"
 import { OpportunityStatusBadge } from "./opportunity-status-badge"
 import { cn } from "@/lib/utils"
+import { formatRfpDate } from "@/lib/rfp/dates"
 
 const FILTERS: { value: InvitationStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -25,14 +26,7 @@ const FILTERS: { value: InvitationStatus | "all"; label: string }[] = [
   { value: "declined", label: "Declined" },
 ]
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-}
+const formatDate = (value: string | null) => formatRfpDate(value)
 
 function StatesCell({ states }: { states: string[] }) {
   if (!states.length) return <span className="text-muted-foreground">—</span>
@@ -50,7 +44,6 @@ export function OpportunitiesTable({
 }: {
   opportunities: VendorOpportunityListItem[]
 }) {
-  const router = useRouter()
   const [filter, setFilter] = useState<InvitationStatus | "all">("all")
 
   const filtered = useMemo(() => {
@@ -100,11 +93,7 @@ export function OpportunitiesTable({
               </TableRow>
             ) : (
               filtered.map((o) => (
-                <TableRow
-                  key={o.id}
-                  onClick={() => router.push(`/vendor/opportunities/${o.id}`)}
-                  className="group cursor-pointer"
-                >
+                <TableRow key={o.id} className="group relative">
                   <TableCell className="whitespace-nowrap font-medium text-navy">
                     {o.buyer}
                   </TableCell>
@@ -113,7 +102,13 @@ export function OpportunitiesTable({
                       {o.urgency === "emergency" ? (
                         <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
                       ) : null}
-                      <span className="truncate">{o.title}</span>
+                      {/* A real link (keyboard, open in new tab); ::after stretches it over the row. */}
+                      <Link
+                        href={`/vendor/opportunities/${o.id}`}
+                        className="truncate rounded-sm outline-none after:absolute after:inset-0 hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {o.title}
+                      </Link>
                     </span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">

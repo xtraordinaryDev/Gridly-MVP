@@ -4,15 +4,19 @@ import { requireVendor } from "@/lib/auth"
 import { resolveVendorIdForSession } from "@/lib/data/rfps"
 import { getCurrentVendor } from "@/lib/data/vendor"
 import { DOCUMENT_TYPES, listVendorDocuments } from "@/lib/data/documents"
+import { BUSINESS_TZ } from "@/lib/rfp/dates"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { DocumentUploader } from "./document-uploader"
-import { openDocument } from "./actions"
 
-function fmt(d: string) {
-  return new Date(d.length === 10 ? d + "T12:00:00Z" : d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+// Upload times are instants (shown in US Central); expiry dates are calendar days.
+function fmtInstant(d: string) {
+  return new Date(d).toLocaleDateString("en-US", { timeZone: BUSINESS_TZ, month: "short", day: "numeric", year: "numeric" })
+}
+function fmtDay(day: string) {
+  return new Date(day + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" })
 }
 
 export default async function VendorDocumentsPage() {
@@ -57,16 +61,17 @@ export default async function VendorDocumentsPage() {
                       {t.label}
                       {t.required ? <span className="text-xs font-normal text-muted-foreground">Required</span> : null}
                     </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {doc ? (
-                        <>
-                          {doc.fileName} · uploaded {fmt(doc.uploadedAt)}
-                          {doc.expiresAt ? ` · expires ${fmt(doc.expiresAt)}` : ""}
-                        </>
-                      ) : (
-                        t.hint
-                      )}
-                    </p>
+                    {doc ? (
+                      <>
+                        <p className="truncate text-xs text-muted-foreground" title={doc.fileName}>{doc.fileName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Uploaded {fmtInstant(doc.uploadedAt)}
+                          {doc.expiresAt ? ` · ${doc.isExpired ? "expired" : "expires"} ${fmtDay(doc.expiresAt)}` : ""}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{t.hint}</p>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -80,14 +85,12 @@ export default async function VendorDocumentsPage() {
                     )
                   ) : null}
                   {doc && !preview ? (
-                    <form action={openDocument.bind(null, doc.id)}>
-                      <button type="submit" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}>
-                        <Download className="size-3.5" />
-                        View
-                      </button>
-                    </form>
+                    <a href={`/vendor/documents/${doc.id}/file`} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}>
+                      <Download className="size-3.5" />
+                      View
+                    </a>
                   ) : null}
-                  <DocumentUploader vendorId={vendorId} type={t.type} hasExpiry={t.hasExpiry} replace={!!doc} preview={preview} />
+                  <DocumentUploader type={t.type} label={t.label} hasExpiry={t.hasExpiry} expiryRequired={t.expiryRequired} currentExpiry={doc?.expiresAt ?? null} replace={!!doc} preview={preview} />
                 </div>
               </CardContent>
             </Card>

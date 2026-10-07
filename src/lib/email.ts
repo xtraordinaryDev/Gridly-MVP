@@ -157,7 +157,8 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   const react = renderTemplate(input)
 
   if (!isEmailConfigured()) {
-    console.info("[GridLink email preview]", { to, subject, template: input.template })
+    // One string, so the recipient and subject survive log serialisation.
+    console.info(`[GridLink email preview] ${JSON.stringify({ to, subject, template: input.template })}`)
     return { ok: true, preview: true }
   }
 

@@ -32,7 +32,10 @@ export async function createVendorAccount(
 
     if (!app) return { ok: false, message: "This link is no longer valid." }
     if (app.status !== "approved") {
-      return { ok: false, message: "This application hasn't been approved yet." }
+      return {
+        ok: false,
+        message: app.status === "rejected" ? "This application was not approved." : "This application hasn't been approved yet.",
+      }
     }
 
     const email = app.sales_rep_email as string | null
@@ -50,7 +53,7 @@ export async function createVendorAccount(
 
     if (createError || !created.user) {
       const msg = createError?.message?.includes("already")
-        ? "An account already exists for this email. Try signing in."
+        ? "This account has already been created. Please sign in."
         : "Couldn't create your account. Please try again."
       return { ok: false, message: msg }
     }

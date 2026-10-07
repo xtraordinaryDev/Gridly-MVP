@@ -4,6 +4,7 @@ import { SupplierInterestSchema } from "@/lib/schemas/supplier-interest"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { sendEmail } from "@/lib/email"
+import { TOO_FAST_MESSAGE, accountExists, botSignal, likeExact } from "@/lib/forms/public-form"
 
 export type SubmitInterestResult =
   | { ok: true }
@@ -15,18 +16,23 @@ export type SubmitInterestResult =
  * vendor_applications row. Validated server-side regardless of client checks.
  */
 export async function submitSupplierInterest(
-  values: unknown
+  values: unknown,
+  meta?: unknown
 ): Promise<SubmitInterestResult> {
+  const bot = botSignal(meta)
+  if (bot === "honeypot") return { ok: true }
+  if (bot === "too_fast") return { ok: false, message: TOO_FAST_MESSAGE }
+
   const parsed = SupplierInterestSchema.safeParse(values)
 
   if (!parsed.success) {
     return {
       ok: false,
-      message: "Some fields need attention. Please review and try again.",
+      message: parsed.error.issues[0]?.message ?? "Some fields need attention. Please review and try again.",
     }
   }
 
-  const data = parsed.data
+  const data = { ...parsed.data, email: parsed.data.email.trim().toLowerCase() }
 
   if (!isSupabaseConfigured()) {
     return { ok: true }
@@ -34,6 +40,24 @@ export async function submitSupplierInterest(
 
   try {
     const supabase = createAdminClient()
+
+    const { data: prior } = await supabase
+      .from("vendor_applications")
+      .select("status")
+      .ilike("sales_rep_email", likeExact(data.email))
+    const statuses = (prior ?? []).map((p) => p.status as string)
+    if (statuses.some((st) => st === "pending_review" || st === "info_requested")) {
+      return {
+        ok: false,
+        message:
+          "We already have an application for this email. If we sent you a registration link, please use that; otherwise we'll be in touch soon.",
+      }
+    }
+    // Already approved or already has a login: answer exactly like a new
+    // application so the form can't be used to find out which emails have accounts.
+    if (statuses.includes("approved") || (await accountExists(supabase, data.email))) {
+      return { ok: true }
+    }
 
     const { error } = await supabase.from("vendor_applications").insert({
       company_name: data.companyName,

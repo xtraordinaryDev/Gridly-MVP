@@ -12,8 +12,8 @@ import { US_STATES } from "@/lib/schemas/vendor-application"
 type Result = { ok: true } | { ok: false; message: string }
 
 const ProfileSchema = z.object({
-  fullName: z.string().trim().min(1, "Your name is required"),
-  companyName: z.string().trim().min(1, "Organization name is required"),
+  fullName: z.string().trim().min(1, "Your name is required").max(120, "Keep your name under 120 characters"),
+  companyName: z.string().trim().min(1, "Organization name is required").max(200, "Keep the organization name under 200 characters"),
 })
 
 export async function updateBuyerProfile(values: unknown): Promise<Result> {
@@ -31,8 +31,8 @@ export async function updateBuyerProfile(values: unknown): Promise<Result> {
 }
 
 const SiteSchema = z.object({
-  name: z.string().trim().min(1, "Site name is required"),
-  address: z.string().trim().min(5, "Enter the full address"),
+  name: z.string().trim().min(1, "Site name is required").max(120, "Keep the site name under 120 characters"),
+  address: z.string().trim().min(5, "Enter the full address").max(300, "That address is too long"),
   state: z.enum(US_STATES).optional().or(z.literal("")),
 })
 

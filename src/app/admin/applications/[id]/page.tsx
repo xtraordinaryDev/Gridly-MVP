@@ -1,12 +1,19 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { ArrowLeft, Download, FileText, Globe } from "lucide-react"
+import { ArrowLeft, Download, FileText, Globe, History } from "lucide-react"
 
-import { getApplication } from "@/lib/data/applications"
-import type { ApplicationDetail } from "@/lib/data/applications"
+import {
+  applicationDocument,
+  approvalBlockers,
+  getApplication,
+  isAwaitingRegistration,
+  listApplicationActivity,
+} from "@/lib/data/applications"
+import type { ApplicationActivity, ApplicationDetail, ApplicationDocuments } from "@/lib/data/applications"
 import type { DocumentRef } from "@/lib/schemas/vendor-application"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { requireAdmin } from "@/lib/auth"
+import { siteUrl } from "@/lib/email"
 import { Badge } from "@/components/ui/badge"
 import {
   Accordion,
@@ -28,11 +35,11 @@ function formatDate(value: string | null) {
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
-      <dd className="mt-0.5 text-sm text-foreground">
+      <dd className="mt-0.5 text-sm text-foreground [overflow-wrap:anywhere]">
         {value === null || value === undefined || value === "" ? (
           <span className="text-muted-foreground">—</span>
         ) : (
@@ -56,10 +63,54 @@ function Tags({ items }: { items: string[] }) {
   )
 }
 
-function docUrl(doc: DocumentRef, configured: boolean) {
-  if (!configured) return null
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "")
-  return `${base}/storage/v1/object/public/vendor-documents/${doc.path}`
+const ACTIVITY_LABEL: Record<ApplicationActivity["action"], string> = {
+  invited: "Invited to register",
+  approved: "Approved",
+  info_requested: "Requested more information",
+  rejected: "Rejected",
+  note: "Note",
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("en-US", {
+    timeZone: "America/Chicago",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  })
+}
+
+function ActivityTimeline({ items }: { items: ApplicationActivity[] }) {
+  return (
+    <div className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-navy">
+        <History className="size-4 text-muted-foreground" />
+        Activity
+      </h2>
+      {items.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">No admin activity yet.</p>
+      ) : (
+        <ol className="mt-4 space-y-4">
+          {items.map((item) => (
+            <li key={item.id} className="border-l-2 border-border pl-4">
+              <p className="text-sm font-medium text-foreground">{ACTIVITY_LABEL[item.action] ?? item.action}</p>
+              <p className="text-xs text-muted-foreground">
+                {item.adminName ?? "System"} · {formatDateTime(item.createdAt)}
+              </p>
+              {item.notes ? (
+                <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-muted/60 px-3 py-2 text-sm text-foreground [overflow-wrap:anywhere]">
+                  {item.notes}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
 }
 
 function bytes(n: number) {
@@ -72,11 +123,12 @@ function bytes(n: number) {
 function DocumentCard({
   label,
   doc,
-  configured,
+  href,
 }: {
   label: string
   doc?: DocumentRef | null
-  configured: boolean
+  /** Admin-only route that signs a short-lived URL on click; null in preview mode. */
+  href: string | null
 }) {
   if (!doc) {
     return (
@@ -89,7 +141,7 @@ function DocumentCard({
     )
   }
 
-  const url = docUrl(doc, configured)
+  const url = href
   return (
     <div className="flex items-center justify-between rounded-xl border border-border bg-background p-3.5">
       <div className="flex min-w-0 items-center gap-3">
@@ -147,6 +199,14 @@ export default async function ApplicationReviewPage({
   if (!app) notFound()
 
   const configured = isSupabaseConfigured()
+  const activity = await listApplicationActivity(id)
+  const blockers = approvalBlockers(app, !configured)
+  const awaiting = isAwaitingRegistration(app)
+  const doc = (key: keyof ApplicationDocuments, slot: string) => {
+    // A reference outside this application's own folder is treated as not provided.
+    const ref = applicationDocument(app, key, !configured)
+    return { doc: ref, href: ref && configured ? `/admin/applications/${app.id}/document/${slot}` : null }
+  }
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -160,11 +220,15 @@ export default async function ApplicationReviewPage({
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-navy">
+          <h1 className="text-2xl font-bold tracking-tight text-navy [overflow-wrap:anywhere]">
             {app.companyName}
           </h1>
-          <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-            Submitted {formatDate(app.submittedAt)}
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            {awaiting
+              ? app.submittedAt
+                ? `Interest form received ${formatDate(app.submittedAt)} — full registration not submitted`
+                : "Invited — registration not submitted"
+              : `Submitted ${formatDate(app.submittedAt)}`}
             <SourceBadge source={app.source} />
           </p>
         </div>
@@ -172,7 +236,7 @@ export default async function ApplicationReviewPage({
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left: application data */}
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <div className="rounded-2xl border border-border bg-card px-5 shadow-sm">
             <Accordion multiple defaultValue={SECTION_IDS}>
               <AccordionItem value="company">
@@ -235,26 +299,10 @@ export default async function ApplicationReviewPage({
                 <AccordionTrigger>Documents</AccordionTrigger>
                 <AccordionContent>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <DocumentCard
-                      label="W-9"
-                      doc={app.documents.w9Form}
-                      configured={configured}
-                    />
-                    <DocumentCard
-                      label="Certificate of Insurance"
-                      doc={app.documents.certificateOfInsurance}
-                      configured={configured}
-                    />
-                    <DocumentCard
-                      label="Distributor License"
-                      doc={app.documents.distributorLicense}
-                      configured={configured}
-                    />
-                    <DocumentCard
-                      label="Company Logo"
-                      doc={app.documents.companyLogo}
-                      configured={configured}
-                    />
+                    <DocumentCard label="W-9" {...doc("w9Form", "w9")} />
+                    <DocumentCard label="Certificate of Insurance" {...doc("certificateOfInsurance", "coi")} />
+                    <DocumentCard label="Distributor License" {...doc("distributorLicense", "distributor_license")} />
+                    <DocumentCard label="Company Logo" {...doc("companyLogo", "logo")} />
                   </div>
                 </AccordionContent>
               </AccordionItem>
@@ -383,11 +431,17 @@ export default async function ApplicationReviewPage({
               </AccordionItem>
             </Accordion>
           </div>
+          <ActivityTimeline items={activity} />
         </div>
 
         {/* Right: review actions */}
         <div className="lg:col-span-1">
-          <ReviewActions application={app} preview={preview} />
+          <ReviewActions
+            application={app}
+            preview={preview}
+            blockers={blockers}
+            registrationUrl={`${siteUrl()}/vendor-registration/${app.invitationToken}`}
+          />
         </div>
       </div>
     </div>

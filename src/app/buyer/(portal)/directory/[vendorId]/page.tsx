@@ -4,6 +4,8 @@ import { ArrowLeft } from "lucide-react"
 
 import { getVendorPublicProfile } from "@/lib/data/directory"
 import { getVendorPerformance } from "@/lib/data/ratings"
+import { isSupplierSaved } from "@/lib/data/saved"
+import { requireBuyer } from "@/lib/auth"
 import { PerformanceBadges } from "@/components/orders/rating-card"
 import { Card, CardContent } from "@/components/ui/card"
 import { VendorProfileHero } from "@/components/buyer/directory/profile/vendor-profile-hero"
@@ -15,7 +17,8 @@ export default async function DirectoryVendorProfilePage({
   params: Promise<{ vendorId: string }>
 }) {
   const { vendorId } = await params
-  const [profile, perf] = await Promise.all([getVendorPublicProfile(vendorId), getVendorPerformance(vendorId)])
+  const { profile: me } = await requireBuyer()
+  const [profile, perf, saved] = await Promise.all([getVendorPublicProfile(vendorId), getVendorPerformance(vendorId), isSupplierSaved(me.id, vendorId)])
   if (!profile) notFound()
 
   return (
@@ -28,7 +31,7 @@ export default async function DirectoryVendorProfilePage({
         Back to directory
       </Link>
 
-      <VendorProfileHero profile={profile} />
+      <VendorProfileHero profile={profile} saved={saved} />
       <Card className="mt-4">
         <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>

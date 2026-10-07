@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .o { stroke: #0A2540 }
+    .g { stroke: #3B82F6 }
+    .r { stroke: #FFFFFF }
+    @media (prefers-color-scheme: dark) {
+      .o { stroke: #FFFFFF }
+      .g { stroke: #60A5FA }
+      .r { stroke: #0A2540 }
+    }
+  </style>
+  <defs>
+    <clipPath id="d"><path d="M32 5C32 5 11 27 11 40a21 21 0 0 0 42 0C53 27 32 5 32 5Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#d)" class="g" stroke-width="3.5"><path d="M24 0V64M40 0V64M0 33H64M0 46H64"/></g>
+  <path d="M32 5C32 5 11 27 11 40a21 21 0 0 0 42 0C53 27 32 5 32 5Z" fill="none" class="o" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="40" cy="46" r="5.5" fill="#10B981" class="r" stroke-width="2"/>
+</svg>

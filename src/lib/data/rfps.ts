@@ -21,6 +21,10 @@ import { matchVerifiedSuppliers } from "@/lib/rfp/match-suppliers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { createContractForAward } from "@/lib/data/invoices"
+import { emailForProfile, vendorContacts } from "@/lib/data/contacts"
+import { ownedBidAttachment, ownedRfpAttachments } from "@/lib/storage/paths"
+import { calendarDay, endOfBusinessDay, formatRfpDate } from "@/lib/rfp/dates"
+import { sendEmail, siteUrl } from "@/lib/email"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import {
   sendBidSubmittedEmail,
@@ -51,6 +55,8 @@ interface MockRfp {
   bidDueDate: string | null
   decisionDate: string | null
   expectedAwardDate: string | null
+  /** When the contract was actually awarded (live mode); falls back to the expected date. */
+  awardedAt?: string | null
   status: RfpStatus
   awardedVendorId: string | null
   createdAt: string
@@ -525,6 +531,11 @@ export async function autoCloseExpiredRfps(buyerId?: string): Promise<void> {
   await q
 }
 
+async function contractAwardedAt(rfpId: string): Promise<string | null> {
+  const { data } = await createAdminClient().from("contracts").select("awarded_at").eq("rfp_id", rfpId).maybeSingle()
+  return (data?.awarded_at as string) ?? null
+}
+
 function invitationStatus(inv: MockInvitation): InvitationStatus {
   if (inv.declinedAt) return "declined"
   if (inv.respondedAt) return "responded"
@@ -590,7 +601,7 @@ function buildActivity(
       id: `${rfp.id}-award`,
       type: "awarded",
       label: "Contract awarded",
-      date: rfp.expectedAwardDate ?? rfp.createdAt,
+      date: rfp.awardedAt ?? rfp.expectedAwardDate ?? rfp.createdAt,
     })
   }
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -740,6 +751,8 @@ export async function getBuyerRfpDetail(
       awardedVendorName: awardedName,
       createdAt: rfp.createdAt,
       publishedAt: rfp.publishedAt,
+      supplierInviteMode: "auto",
+      selectedVendorIds: [],
       invitations,
       responses,
       activity: buildActivity(rfp, invs, resps),
@@ -825,6 +838,8 @@ export async function getBuyerRfpDetail(
     awardedVendorName: awardedVendorId ? await vendorName(awardedVendorId) : null,
     createdAt: rfp.created_at as string,
     publishedAt: (rfp.published_at as string) ?? null,
+    supplierInviteMode: rfp.supplier_invite_mode === "manual" ? "manual" : "auto",
+    selectedVendorIds: (rfp.selected_vendor_ids as string[]) ?? [],
     invitations,
     responses,
     activity: buildActivity(
@@ -849,6 +864,7 @@ export async function getBuyerRfpDetail(
         expectedAwardDate: (rfp.expected_award_date as string) ?? null,
         status: rfp.status as RfpStatus,
         awardedVendorId,
+        awardedAt: awardedVendorId ? await contractAwardedAt(rfpId) : null,
         createdAt: rfp.created_at as string,
         publishedAt: (rfp.published_at as string) ?? null,
       },
@@ -962,10 +978,15 @@ export async function saveRfpFromWizard(
   publish: boolean,
   existingId?: string
 ): Promise<{ ok: true; rfpId: string } | { ok: false; message: string }> {
+  // The buyer's ticked list decides who is invited in BOTH modes — "auto" only
+  // pre-fills it with the matches. Anything not a verified supplier is dropped.
+  const verified = await listVerifiedVendors()
+  const verifiedIds = new Set(verified.map((v) => v.id))
+  const chosen = [...new Set(input.selectedVendorIds)].filter((id) => verifiedIds.has(id))
   const vendorIds =
-    input.supplierInviteMode === "manual"
-      ? input.selectedVendorIds
-      : matchVerifiedSuppliers(await listVerifiedVendors(), {
+    chosen.length || input.supplierInviteMode === "manual"
+      ? chosen
+      : matchVerifiedSuppliers(verified, {
           states: input.deliveryStates,
           capabilities: input.requiredCapabilities,
           certifications: input.requiredCertifications.filter((c) => c !== "None"),
@@ -1047,6 +1068,18 @@ export async function saveRfpFromWizard(
   }
 
   const supabase = await createClient()
+
+  // Attachments must be files this buyer uploaded (or ones already on the RFP):
+  // a stored path is what later authorises a download.
+  let storedAttachments: { path: string }[] = []
+  if (existingId) {
+    const { data: prev } = await supabase.from("rfps").select("attachments").eq("id", existingId).eq("buyer_id", buyerId).maybeSingle()
+    if (Array.isArray(prev?.attachments)) storedAttachments = prev.attachments as { path: string }[]
+  }
+  if (!ownedRfpAttachments(input.attachments, buyerId, storedAttachments)) {
+    return { ok: false, message: "One of the attachments couldn't be verified. Remove it and upload it again." }
+  }
+
   const columns = {
       buyer_id: buyerId,
       title: input.title,
@@ -1065,11 +1098,17 @@ export async function saveRfpFromWizard(
       index_name: input.pricingMode === "index" ? input.indexName?.trim() || null : null,
       delivery_sites: input.deliveryAddresses.map((a) => ({ address: a.address, gallons: a.gallons ?? null, tankSizeGallons: a.tankSizeGallons ?? null, deliveryWindow: a.deliveryWindow || null })),
       attachments: input.attachments,
-      bid_due_date: new Date(input.bidDueDate).toISOString(),
-      decision_date: new Date(input.decisionDate).toISOString(),
-      expected_award_date: new Date(input.expectedAwardDate).toISOString(),
+      // Bidding stays open through the whole due day; the other two are calendar days.
+      bid_due_date: endOfBusinessDay(input.bidDueDate),
+      decision_date: calendarDay(input.decisionDate),
+      expected_award_date: calendarDay(input.expectedAwardDate),
       status: publish ? "published" : "draft",
       published_at: publish ? now : null,
+      // Remember the supplier choice so reopening a draft doesn't reset it.
+      supplier_invite_mode: input.supplierInviteMode,
+      // Only drafts need it (published RFPs have invitation rows), and invited
+      // suppliers can read the RFP row — so the list is cleared on publish.
+      selected_vendor_ids: publish ? [] : chosen,
   }
 
   let id: string
@@ -1086,41 +1125,47 @@ export async function saveRfpFromWizard(
     id = row.id as string
   }
 
-  // Notify the GridLink operator that an RFP was created (draft or published).
-  await sendNewRfpNotification({
-    rfpId: id,
-    rfpTitle: input.title,
-    buyerName,
-    fuelType: input.fuelType,
-    quantityGallons: input.quantityGallons,
-    deliveryStates: input.deliveryStates,
-    status: publish ? "published" : "draft",
-  })
-
   if (publish) {
     const admin = createAdminClient()
     const invites = vendorIds.map((vendorId) => ({
       rfp_id: id,
       vendor_id: vendorId,
     }))
-    await admin.from("rfp_invitations").insert(invites)
+    const { error: inviteError } = await admin.from("rfp_invitations").insert(invites)
+    if (inviteError) {
+      // A published RFP nobody was invited to is worse than a draft: put it back.
+      console.error("saveRfpFromWizard: invitations failed:", inviteError.message)
+      await admin.from("rfps").update({ status: "draft", published_at: null }).eq("id", id)
+      return { ok: false, message: "Couldn't invite the selected suppliers, so the RFP was kept as a draft. Please try publishing again." }
+    }
+  }
 
-    const vendors = await listVerifiedVendors()
+  // Tell the GridLink operator once when the RFP is first saved, and again when it goes live.
+  if (!existingId || publish) {
+    await sendNewRfpNotification({
+      rfpId: id,
+      rfpTitle: input.title,
+      buyerName,
+      fuelType: input.fuelType,
+      quantityGallons: input.quantityGallons,
+      deliveryStates: input.deliveryStates,
+      status: publish ? "published" : "draft",
+    })
+  }
+
+  if (publish) {
+    const contacts = await vendorContacts(vendorIds)
     await sendRfpInvitationEmails({
       rfpId: id,
       rfpTitle: input.title,
       fuelType: input.fuelType,
       quantityGallons: input.quantityGallons,
       deliveryStates: input.deliveryStates,
-      bidDueDate: new Date(input.bidDueDate).toISOString(),
+      bidDueDate: endOfBusinessDay(input.bidDueDate),
       buyerName,
-      vendorEmails: vendorIds.map((vid) => {
-        const v = vendors.find((x) => x.id === vid)
-        return {
-          vendorId: vid,
-          companyName: v?.companyName ?? "Supplier",
-          email: `invites+${vid}@gridlink.demo`,
-        }
+      vendorEmails: vendorIds.flatMap((vid) => {
+        const c = contacts.get(vid)
+        return c?.email ? [{ vendorId: vid, companyName: c.companyName, email: c.email }] : []
       }),
     })
   }
@@ -1132,6 +1177,33 @@ export async function saveRfpFromWizard(
 // RFP lifecycle (buyer)
 // ---------------------------------------------------------------------------
 type LifecycleResult = { ok: true; rfpId?: string } | { ok: false; message: string }
+
+/** Email every invited supplier who hasn't declined (lifecycle changes they'd otherwise only notice by looking). */
+async function notifyInvitedVendors(rfp: Record<string, unknown>, headline: string, intro: string, extraRows: [string, string][] = []) {
+  const { data: invs } = await createAdminClient().from("rfp_invitations").select("vendor_id, declined_at").eq("rfp_id", rfp.id as string)
+  const ids = (invs ?? []).filter((i) => !i.declined_at).map((i) => i.vendor_id as string)
+  if (!ids.length) return
+  const contacts = await vendorContacts(ids)
+  await Promise.all(
+    ids.map((id) => {
+      const c = contacts.get(id)
+      if (!c?.email) return null
+      return sendEmail({
+        to: c.email,
+        template: "order-event",
+        data: {
+          recipientName: c.companyName,
+          // The headline becomes the subject line, so it names the RFP.
+          headline: `${headline}: ${(rfp.title as string) ?? "RFP"}`,
+          intro,
+          rows: [["RFP", (rfp.title as string) ?? "RFP"], ...extraRows],
+          ctaLabel: "View opportunity",
+          ctaUrl: `${siteUrl()}/vendor/opportunities/${rfp.id as string}`,
+        },
+      })
+    })
+  )
+}
 
 async function loadOwnedRfp(buyerId: string, rfpId: string) {
   const { data } = await createAdminClient().from("rfps").select("*").eq("id", rfpId).eq("buyer_id", buyerId).maybeSingle()
@@ -1150,7 +1222,9 @@ export async function closeRfpBidding(buyerId: string, rfpId: string): Promise<L
   if (!rfp) return { ok: false, message: "RFP not found." }
   if (rfp.status !== "published") return { ok: false, message: "Only published RFPs can be closed." }
   const { error } = await createAdminClient().from("rfps").update({ status: "closed" }).eq("id", rfpId)
-  return error ? { ok: false, message: "Couldn't close bidding." } : { ok: true }
+  if (error) return { ok: false, message: "Couldn't close bidding." }
+  await notifyInvitedVendors(rfp, "Bidding has closed", "The buyer closed bidding on this RFP. No further bids or changes are being accepted.")
+  return { ok: true }
 }
 
 export async function cancelRfp(buyerId: string, rfpId: string): Promise<LifecycleResult> {
@@ -1165,12 +1239,14 @@ export async function cancelRfp(buyerId: string, rfpId: string): Promise<Lifecyc
   if (!rfp) return { ok: false, message: "RFP not found." }
   if (rfp.status === "awarded") return { ok: false, message: "Awarded RFPs can't be cancelled." }
   const { error } = await createAdminClient().from("rfps").update({ status: "cancelled" }).eq("id", rfpId)
-  return error ? { ok: false, message: "Couldn't cancel the RFP." } : { ok: true }
+  if (error) return { ok: false, message: "Couldn't cancel the RFP." }
+  if (rfp.status !== "draft") await notifyInvitedVendors(rfp, "RFP cancelled", "The buyer cancelled this RFP. No award will be made and no further action is needed.")
+  return { ok: true }
 }
 
 /** Extend (published) or re-open (closed) bidding with a new due date. */
 export async function extendRfpDeadline(buyerId: string, rfpId: string, newDueDate: string): Promise<LifecycleResult> {
-  const due = new Date(newDueDate + (newDueDate.length === 10 ? "T23:59:00Z" : ""))
+  const due = new Date(/^\d{4}-\d{2}-\d{2}/.test(newDueDate) ? endOfBusinessDay(newDueDate.slice(0, 10)) : NaN)
   if (Number.isNaN(due.getTime()) || due.getTime() < Date.now()) return { ok: false, message: "Pick a due date in the future." }
   if (!isSupabaseConfigured()) {
     const r = getMockStore().rfps.find((x) => x.id === rfpId && x.buyerId === buyerId)
@@ -1183,8 +1259,22 @@ export async function extendRfpDeadline(buyerId: string, rfpId: string, newDueDa
   const rfp = await loadOwnedRfp(buyerId, rfpId)
   if (!rfp) return { ok: false, message: "RFP not found." }
   if (rfp.status !== "published" && rfp.status !== "closed") return { ok: false, message: "Only open or closed RFPs can be extended." }
-  const { error } = await createAdminClient().from("rfps").update({ status: "published", bid_due_date: due.toISOString() }).eq("id", rfpId)
-  return error ? { ok: false, message: "Couldn't update the deadline." } : { ok: true }
+  // Keep the timeline in order: a later bid deadline pushes the decision and
+  // award dates out with it rather than leaving them in the past.
+  const dueDay = calendarDay(newDueDate.slice(0, 10))
+  const patch: Record<string, unknown> = { status: "published", bid_due_date: due.toISOString() }
+  const decision = (rfp.decision_date as string | null) && (rfp.decision_date as string) < dueDay ? dueDay : (rfp.decision_date as string | null)
+  if (decision !== rfp.decision_date) patch.decision_date = decision
+  if (decision && rfp.expected_award_date && (rfp.expected_award_date as string) < decision) patch.expected_award_date = decision
+  const { error } = await createAdminClient().from("rfps").update(patch).eq("id", rfpId)
+  if (error) return { ok: false, message: "Couldn't update the deadline." }
+  await notifyInvitedVendors(
+    rfp,
+    rfp.status === "closed" ? "Bidding re-opened" : "Bid deadline extended",
+    rfp.status === "closed" ? "The buyer re-opened bidding on this RFP." : "The buyer extended the deadline for this RFP.",
+    [["New bid deadline", formatRfpDate(due.toISOString())]]
+  )
+  return { ok: true }
 }
 
 /** Copy an RFP into a new draft so the buyer can tweak and re-publish. */
@@ -1243,37 +1333,59 @@ export async function awardRfpContract(
     return { ok: true }
   }
 
-  const supabase = await createClient()
-  const { error } = await supabase
+  const admin = createAdminClient()
+  const rfp = await loadOwnedRfp(buyerId, rfpId)
+  if (!rfp) return { ok: false, message: "RFP not found." }
+  if (rfp.status === "awarded") return { ok: false, message: "This RFP has already been awarded." }
+  if (rfp.status !== "published" && rfp.status !== "closed") {
+    return { ok: false, message: "Only open or closed RFPs can be awarded." }
+  }
+
+  const { data: bids } = await admin.from("rfp_responses").select("vendor_id, status").eq("rfp_id", rfpId)
+  const winningBid = (bids ?? []).find((b) => b.vendor_id === vendorId)
+  if (!winningBid || winningBid.status !== "submitted") {
+    return { ok: false, message: "That supplier doesn't have an active bid on this RFP." }
+  }
+
+  // Conditional update: of two simultaneous awards, only one finds the RFP still awardable.
+  const { data: updated, error } = await admin
     .from("rfps")
     .update({ status: "awarded", awarded_vendor_id: vendorId })
     .eq("id", rfpId)
     .eq("buyer_id", buyerId)
+    .in("status", ["published", "closed"])
+    .select("id")
 
   if (error) return { ok: false, message: "Could not award contract." }
+  if (!updated?.length) return { ok: false, message: "This RFP has already been awarded." }
 
-  // Awarding creates the contract that invoices hang off.
-  await createContractForAward({ rfpId, buyerId, vendorId })
+  // Awarding creates the contract that orders and invoices hang off. If that
+  // fails, undo the award rather than leave an awarded RFP with no contract.
+  const contractId = await createContractForAward({ rfpId, buyerId, vendorId })
+  if (!contractId) {
+    await admin.from("rfps").update({ status: rfp.status as string, awarded_vendor_id: null }).eq("id", rfpId)
+    return { ok: false, message: "Couldn't create the contract, so the award was not saved. Please try again." }
+  }
 
-  const { data: rfp } = await supabase.from("rfps").select("title").eq("id", rfpId).single()
-  const { data: respRows } = await supabase.from("rfp_responses").select("vendor_id").eq("rfp_id", rfpId)
-  const awardedName = await vendorName(vendorId)
-  await sendRfpAwardedEmails({
-    rfpTitle: (rfp?.title as string) ?? "RFP",
-    buyerName: "Buyer",
-    awarded: {
-      email: `vendor@${vendorId}.example.com`,
-      companyName: awardedName,
-    },
-    notAwarded: await Promise.all(
-      (respRows ?? [])
-        .filter((r) => r.vendor_id !== vendorId)
-        .map(async (r) => ({
-          email: `vendor@${r.vendor_id as string}.example.com`,
-          companyName: await vendorName(r.vendor_id as string),
-        }))
-    ),
-  })
+  const losers = (bids ?? []).filter((b) => b.vendor_id !== vendorId && b.status === "submitted").map((b) => b.vendor_id as string)
+  const [contacts, { data: buyer }] = await Promise.all([
+    vendorContacts([vendorId, ...losers]),
+    admin.from("profiles").select("company_name").eq("id", buyerId).maybeSingle(),
+  ])
+  const winner = contacts.get(vendorId)
+  const buyerName = (buyer?.company_name as string) ?? "The buyer"
+  const rfpTitle = (rfp.title as string) ?? "RFP"
+  if (winner?.email) {
+    await sendRfpAwardedEmails({
+      rfpTitle,
+      buyerName,
+      awarded: { email: winner.email, companyName: winner.companyName },
+      notAwarded: losers.flatMap((id) => {
+        const c = contacts.get(id)
+        return c?.email ? [{ email: c.email, companyName: c.companyName }] : []
+      }),
+    })
+  }
 
   return { ok: true }
 }
@@ -1500,13 +1612,19 @@ export async function markInvitationViewed(vendorId: string, rfpId: string) {
     return
   }
 
-  const supabase = await createClient()
-  await supabase
+  // Service role, scoped to this vendor's own invitation: vendors have no
+  // direct write access to invitations.
+  await createAdminClient()
     .from("rfp_invitations")
     .update({ viewed_at: new Date().toISOString() })
     .eq("rfp_id", rfpId)
     .eq("vendor_id", vendorId)
     .is("viewed_at", null)
+}
+
+/** The bid total is always price × the RFP's gallons — never a number the bidder typed. */
+function bidTotal(pricePerGallon: number, quantityGallons: number): number {
+  return Math.round(pricePerGallon * quantityGallons * 100) / 100
 }
 
 /** Fixed bids carry $/gal directly; index bids store reference index + differential as the estimate. */
@@ -1547,7 +1665,7 @@ export async function submitVendorBid(
       attachmentName: input.attachmentName || null,
       attachmentPath: input.attachmentPath || null,
       pricePerGallon: effectivePpg(input),
-      totalPrice: input.totalPrice,
+      totalPrice: bidTotal(effectivePpg(input), target.quantityGallons),
       deliveryTerms: input.deliveryTerms,
       validityDays: input.validityDays,
       notes: input.notes ?? (input.attachmentName ? `Attachment: ${input.attachmentName}` : null),
@@ -1565,20 +1683,38 @@ export async function submitVendorBid(
     return { ok: true }
   }
 
-  const supabase = await createClient()
-  const { data: target } = await supabase.from("rfps").select("status, bid_due_date").eq("id", rfpId).maybeSingle()
-  if (!target || !biddingOpen(target.status as RfpStatus, target.bid_due_date as string | null)) {
+  const admin = createAdminClient()
+  const [{ data: target }, { data: invitation }] = await Promise.all([
+    admin.from("rfps").select("status, bid_due_date, title, buyer_id, quantity_gallons").eq("id", rfpId).maybeSingle(),
+    admin.from("rfp_invitations").select("id, declined_at, responded_at").eq("rfp_id", rfpId).eq("vendor_id", vendorId).maybeSingle(),
+  ])
+  if (!target || !invitation) return { ok: false, message: "You haven't been invited to this RFP." }
+  const isEdit = Boolean(invitation.responded_at)
+  if (invitation.declined_at) return { ok: false, message: "You declined this opportunity." }
+  if (!biddingOpen(target.status as RfpStatus, target.bid_due_date as string | null)) {
     return { ok: false, message: "Bidding has closed for this RFP." }
   }
-  const { error } = await supabase.from("rfp_responses").upsert({
+  // An attachment must be a file this vendor uploaded for this RFP (or the one already on their bid).
+  if (input.attachmentPath) {
+    const { data: prior } = await admin.from("rfp_responses").select("attachment_path").eq("rfp_id", rfpId).eq("vendor_id", vendorId).maybeSingle()
+    if (!ownedBidAttachment(input.attachmentPath, rfpId, vendorId, (prior?.attachment_path as string) ?? null)) {
+      return { ok: false, message: "Please re-attach your file." }
+    }
+  }
+  const ppg = effectivePpg(input)
+  if (!(ppg > 0)) return { ok: false, message: "Enter a price per gallon greater than zero." }
+
+  // Every rule above was checked here, so the write goes through the service
+  // role, scoped to this vendor: vendors can't write bids directly.
+  const { error } = await admin.from("rfp_responses").upsert({
     rfp_id: rfpId,
     vendor_id: vendorId,
     pricing_mode: input.pricingMode,
     index_name: input.pricingMode === "index" ? input.indexName?.trim() || null : null,
     differential: input.pricingMode === "index" ? input.differential ?? null : null,
     attachment_path: input.attachmentPath || null,
-    price_per_gallon: effectivePpg(input),
-    total_price: input.totalPrice,
+    price_per_gallon: ppg,
+    total_price: bidTotal(ppg, Number(target.quantity_gallons) || 0),
     delivery_terms: input.deliveryTerms,
     validity_days: input.validityDays,
     notes: input.notes ?? null,
@@ -1589,11 +1725,22 @@ export async function submitVendorBid(
 
   if (error) return { ok: false, message: "Could not submit bid." }
 
-  await supabase
+  await admin
     .from("rfp_invitations")
     .update({ responded_at: now })
     .eq("rfp_id", rfpId)
     .eq("vendor_id", vendorId)
+
+  // Let the buyer know a bid came in.
+  const buyerEmail = await emailForProfile(target.buyer_id as string)
+  if (buyerEmail) {
+    await sendBidSubmittedEmail({
+      buyerEmail,
+      rfpTitle: (target.title as string) ?? "RFP",
+      vendorName: await vendorName(vendorId),
+      updated: isEdit,
+    })
+  }
 
   return { ok: true }
 }
@@ -1616,7 +1763,7 @@ export async function withdrawVendorBid(
 
   const admin = createAdminClient()
   const [{ data: target }, { data: resp }] = await Promise.all([
-    admin.from("rfps").select("status, bid_due_date").eq("id", rfpId).maybeSingle(),
+    admin.from("rfps").select("status, bid_due_date, title, buyer_id").eq("id", rfpId).maybeSingle(),
     admin.from("rfp_responses").select("id, status").eq("rfp_id", rfpId).eq("vendor_id", vendorId).maybeSingle(),
   ])
   if (!resp || resp.status !== "submitted") return { ok: false, message: "No submitted bid to withdraw." }
@@ -1626,6 +1773,12 @@ export async function withdrawVendorBid(
   const { error } = await admin.from("rfp_responses").update({ status: "withdrawn" }).eq("id", resp.id)
   if (error) return { ok: false, message: "Couldn't withdraw the bid." }
   await admin.from("rfp_invitations").update({ responded_at: null }).eq("rfp_id", rfpId).eq("vendor_id", vendorId)
+
+  // The buyer may be about to award: tell them this bid is gone.
+  const buyerEmail = await emailForProfile(target.buyer_id as string)
+  if (buyerEmail) {
+    await sendBidSubmittedEmail({ buyerEmail, rfpTitle: (target.title as string) ?? "RFP", vendorName: await vendorName(vendorId), withdrawn: true })
+  }
   return { ok: true }
 }
 
@@ -1647,13 +1800,16 @@ export async function declineVendorInvitation(
     return { ok: true }
   }
 
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("rfp_invitations")
-    .update({ declined_at: now })
-    .eq("rfp_id", rfpId)
-    .eq("vendor_id", vendorId)
+  const admin = createAdminClient()
+  const [{ data: invitation }, { data: bid }] = await Promise.all([
+    admin.from("rfp_invitations").select("id, declined_at").eq("rfp_id", rfpId).eq("vendor_id", vendorId).maybeSingle(),
+    admin.from("rfp_responses").select("status").eq("rfp_id", rfpId).eq("vendor_id", vendorId).maybeSingle(),
+  ])
+  if (!invitation) return { ok: false, message: "Invitation not found." }
+  if (invitation.declined_at) return { ok: false, message: "You already declined this opportunity." }
+  if (bid?.status === "submitted") return { ok: false, message: "Withdraw your bid before declining this opportunity." }
 
+  const { error } = await admin.from("rfp_invitations").update({ declined_at: now }).eq("id", invitation.id as string)
   if (error) return { ok: false, message: "Could not decline." }
   return { ok: true }
 }
@@ -1665,11 +1821,13 @@ export async function resolveVendorIdForSession(
   if (preview || !isSupabaseConfigured()) return PREVIEW_VENDOR_ID
 
   const supabase = await createClient()
+  // First row, not maybeSingle(): a duplicate vendor row must not lock the supplier out.
   const { data } = await supabase
     .from("vendors")
     .select("id")
     .eq("profile_id", profileId)
-    .maybeSingle()
+    .order("created_at", { ascending: true })
+    .limit(1)
 
-  return (data?.id as string) ?? PREVIEW_VENDOR_ID
+  return (data?.[0]?.id as string) ?? PREVIEW_VENDOR_ID
 }

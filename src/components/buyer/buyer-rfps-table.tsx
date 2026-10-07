@@ -27,16 +27,9 @@ import {
 } from "@/components/ui/table"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { formatRfpDate } from "@/lib/rfp/dates"
 
-function formatDate(value: string | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-}
+const formatDate = (value: string | null) => formatRfpDate(value)
 
 const columnHelper = createColumnHelper<BuyerRfpListItem>()
 

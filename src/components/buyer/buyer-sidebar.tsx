@@ -10,9 +10,9 @@ import {
   LayoutDashboard,
   Search,
   Settings,
-  Zap,
 } from "lucide-react"
 
+import { GridLinkLogo } from "@/components/brand/logo"
 import { PortalMobileNav, PortalSidebar, type PortalNavItem } from "@/components/portal-nav"
 
 const NAV: PortalNavItem[] = [
@@ -31,12 +31,7 @@ const FOOTER = "GridLink Buyer Portal"
 function Brand() {
   return (
     <Link href="/buyer/dashboard" className="flex h-16 shrink-0 items-center gap-2 border-b border-white/10 px-5">
-      <span className="flex size-8 items-center justify-center rounded-lg bg-white/10">
-        <Zap className="size-4 fill-brand-blue text-brand-blue" />
-      </span>
-      <span className="text-base font-bold tracking-tight">
-        Grid<span className="text-brand-blue">Link</span>
-      </span>
+      <GridLinkLogo tone="dark" />
     </Link>
   )
 }

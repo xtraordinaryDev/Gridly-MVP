@@ -12,9 +12,13 @@ import {
   type SupplierInterest,
   INTEREST_PRODUCTS,
   ANNUAL_GALLONS_RANGES,
+  SUPPLIER_INTEREST_LIMITS as LIMITS,
 } from "@/lib/schemas/supplier-interest"
 import { US_STATES } from "@/lib/schemas/vendor-application"
+import { useBotCheck } from "@/components/marketing/bot-check"
 import { submitSupplierInterest } from "./actions"
+
+const GALLONS_ITEMS = ANNUAL_GALLONS_RANGES.map((r) => ({ value: r as string, label: `${r} gallons` }))
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -65,6 +69,7 @@ function Chip({
 export function SupplierInterestForm() {
   const [submitted, setSubmitted] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const bot = useBotCheck()
 
   const form = useForm<SupplierInterest>({
     resolver: zodResolver(SupplierInterestSchema),
@@ -89,7 +94,7 @@ export function SupplierInterestForm() {
 
   function onSubmit(values: SupplierInterest) {
     startTransition(async () => {
-      const result = await submitSupplierInterest(values)
+      const result = await submitSupplierInterest(values, bot.meta())
       if (result.ok) {
         setSubmitted(true)
       } else {
@@ -119,8 +124,9 @@ export function SupplierInterestForm() {
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-8 rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8"
+        className="relative space-y-8 rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8"
       >
+        {bot.field}
         <div className="grid gap-6 sm:grid-cols-2">
           <FormField
             control={form.control}
@@ -129,7 +135,7 @@ export function SupplierInterestForm() {
               <FormItem>
                 <FormLabel>Company name</FormLabel>
                 <FormControl>
-                  <Input placeholder="Acme Fuel Co." {...field} />
+                  <Input placeholder="Acme Fuel Co." autoComplete="organization" maxLength={LIMITS.companyName} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -142,7 +148,7 @@ export function SupplierInterestForm() {
               <FormItem>
                 <FormLabel>Contact name</FormLabel>
                 <FormControl>
-                  <Input placeholder="Jordan Rivera" {...field} />
+                  <Input placeholder="Jordan Rivera" autoComplete="name" maxLength={LIMITS.contactName} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -158,6 +164,8 @@ export function SupplierInterestForm() {
                   <Input
                     type="email"
                     placeholder="jordan@acmefuel.com"
+                    autoComplete="email"
+                    maxLength={LIMITS.email}
                     {...field}
                   />
                 </FormControl>
@@ -175,6 +183,8 @@ export function SupplierInterestForm() {
                   <Input
                     type="tel"
                     placeholder="(555) 123-4567"
+                    autoComplete="tel"
+                    maxLength={LIMITS.phone}
                     {...field}
                   />
                 </FormControl>
@@ -194,7 +204,7 @@ export function SupplierInterestForm() {
                   </span>
                 </FormLabel>
                 <FormControl>
-                  <Input placeholder="https://acmefuel.com" {...field} />
+                  <Input type="url" inputMode="url" placeholder="https://acmefuel.com" maxLength={LIMITS.website} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -277,6 +287,7 @@ export function SupplierInterestForm() {
               <Select
                 value={field.value ?? null}
                 onValueChange={(value) => field.onChange(value)}
+                items={GALLONS_ITEMS}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a range" />
@@ -304,6 +315,7 @@ export function SupplierInterestForm() {
                 <Textarea
                   rows={5}
                   placeholder="Tell us about your operations, coverage area, fleet, and what makes your company a strong fuel supplier."
+                  maxLength={LIMITS.description}
                   {...field}
                 />
               </FormControl>

@@ -31,7 +31,7 @@ export default async function VendorInvoicesPage() {
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatTile label="Outstanding" value={moneyCompact(stats.outstanding)} title={money(stats.outstanding)} hint={`${stats.openCount} open`} icon={Hourglass} accent="text-brand-blue bg-brand-blue/10" />
         <StatTile label="Overdue" value={moneyCompact(stats.overdue)} title={money(stats.overdue)} hint={`${stats.overdueCount} invoice${stats.overdueCount === 1 ? "" : "s"}`} icon={AlertTriangle} accent={stats.overdue > 0 ? "text-red-700 bg-red-100" : "text-muted-foreground bg-muted"} />
         <StatTile label="Paid this month" value={moneyCompact(stats.paidThisMonth)} title={money(stats.paidThisMonth)} icon={CircleDollarSign} accent="text-emerald bg-emerald/15" />

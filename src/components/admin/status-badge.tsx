@@ -18,16 +18,24 @@ const CONFIG: Record<
   rejected: { label: "Rejected", className: "bg-destructive/10 text-destructive" },
 }
 
+const AWAITING = {
+  label: "Awaiting registration",
+  className: "bg-muted text-muted-foreground",
+}
+
 export function StatusBadge({
   status,
+  awaitingRegistration = false,
   className,
   size = "default",
 }: {
   status: ApplicationStatus
+  /** Still open, but the supplier hasn't sent the full registration — nothing to review yet. */
+  awaitingRegistration?: boolean
   className?: string
   size?: "default" | "lg"
 }) {
-  const config = CONFIG[status]
+  const config = awaitingRegistration && status === "pending_review" ? AWAITING : CONFIG[status]
   return (
     <Badge
       className={cn(

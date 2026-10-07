@@ -28,6 +28,9 @@ export async function submitBid(
   if (result.ok) {
     revalidatePath(`/vendor/opportunities/${rfpId}`)
     revalidatePath("/vendor/opportunities")
+    revalidatePath("/vendor/rfp-responses")
+    revalidatePath("/vendor/dashboard")
+    revalidatePath(`/buyer/rfps/${rfpId}`)
   }
   return result
 }

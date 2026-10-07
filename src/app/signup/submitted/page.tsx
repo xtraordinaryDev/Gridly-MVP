@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { CheckCircle2, Zap } from "lucide-react"
+import { GridLinkLogo } from "@/components/brand/logo"
+import { CheckCircle2 } from "lucide-react"
 
 import { buttonVariants } from "@/components/ui/button"
 
@@ -14,12 +15,7 @@ export default function BuyerRequestSubmittedPage() {
     <main className="flex min-h-screen flex-1 items-center justify-center bg-accent/30 px-4 py-16">
       <div className="w-full max-w-md">
         <Link href="/" className="mb-6 flex items-center justify-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-navy text-navy-foreground">
-            <Zap className="size-4 fill-brand-blue text-brand-blue" />
-          </span>
-          <span className="text-lg font-bold tracking-tight text-navy">
-            Grid<span className="text-brand-blue">Link</span>
-          </span>
+          <GridLinkLogo />
         </Link>
 
         <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
@@ -31,6 +27,17 @@ export default function BuyerRequestSubmittedPage() {
             Thanks for requesting access to GridLink. Our team will review your organization and
             reach out within 1–2 business days. If approved, you&apos;ll receive an email with a
             link to create your account.
+          </p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Already have a GridLink account?{" "}
+            <Link href="/login" className="font-medium text-brand-blue hover:underline">
+              Sign in
+            </Link>{" "}
+            or{" "}
+            <Link href="/forgot-password" className="font-medium text-brand-blue hover:underline">
+              reset your password
+            </Link>
+            .
           </p>
           <Link href="/" className={`${buttonVariants({ variant: "outline" })} mt-6`}>
             Back to GridLink

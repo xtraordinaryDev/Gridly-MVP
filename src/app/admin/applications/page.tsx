@@ -1,4 +1,5 @@
 import { listApplications } from "@/lib/data/applications"
+import { siteUrl } from "@/lib/email"
 import { ApplicationsTable } from "./applications-table"
 
 export default async function ApplicationsPage({
@@ -20,7 +21,11 @@ export default async function ApplicationsPage({
         </p>
       </div>
 
-      <ApplicationsTable data={applications} initialStatus={status ?? "all"} />
+      <ApplicationsTable
+        data={applications}
+        initialStatus={status ?? "all"}
+        registrationBase={`${siteUrl()}/vendor-registration`}
+      />
     </div>
   )
 }

@@ -8,7 +8,7 @@ import { roleHomePath, type Role } from "@/lib/auth"
 
 const Schema = z
   .object({
-    password: z.string().min(8, "Use at least 8 characters"),
+    password: z.string().min(10, "Use at least 10 characters").max(72, "Use 72 characters or fewer"),
     confirmPassword: z.string(),
   })
   .refine((v) => v.password === v.confirmPassword, { path: ["confirmPassword"], message: "Passwords don't match" })

@@ -1,13 +1,14 @@
 import "server-only"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import {
   getVendorOpportunityDetail,
   listVendorOpportunities,
   resolveVendorIdForSession,
 } from "@/lib/data/rfps"
-import type { InvitationStatus } from "@/lib/rfp/types"
+import type { InvitationStatus, PricingMode, RfpStatus, VendorOpportunityListItem } from "@/lib/rfp/types"
 
 export type OpportunityStatus = "new" | "viewed" | "responded" | "declined"
 
@@ -66,6 +67,24 @@ export interface NotificationPrefs {
   states: string[]
   minGallons: number
   emergencyImmediate: boolean
+}
+
+export type BidOutcome = "submitted" | "withdrawn" | "awarded" | "not_selected" | "rfp_cancelled"
+
+export interface VendorBid {
+  id: string
+  rfpId: string
+  title: string
+  buyer: string
+  quantityGallons: number
+  dueDate: string | null
+  submittedAt: string
+  pricingMode: PricingMode
+  pricePerGallon: number | null
+  totalPrice: number | null
+  outcome: BidOutcome
+  /** Still open for bidding, so a submitted bid can be edited or withdrawn */
+  biddingOpen: boolean
 }
 
 export interface VendorDashboardStats {
@@ -218,7 +237,8 @@ const MOCK_ACTIVITY: ActivityEvent[] = [
   },
 ]
 
-const DEFAULT_PREFS: NotificationPrefs = {
+// Preview-mode sample only; real vendors get defaultNotificationPrefs().
+const MOCK_PREFS: NotificationPrefs = {
   emailFrequency: "daily",
   fuelTypes: ["Diesel", "Dyed Diesel", "DEF", "Gas"],
   states: ["Illinois", "Indiana", "Wisconsin", "Iowa", "Missouri"],
@@ -290,12 +310,16 @@ export async function getCurrentVendor(): Promise<VendorProfile | null> {
   } = await supabase.auth.getUser()
   if (!user) return null
 
-  const { data } = await supabase
+  // Oldest row wins: a duplicate vendor record for one login must not make
+  // maybeSingle() fail and lock the supplier out of the portal.
+  const { data: rows } = await supabase
     .from("vendors")
     .select("*")
     .eq("profile_id", user.id)
-    .maybeSingle()
+    .order("created_at", { ascending: true })
+    .limit(1)
 
+  const data = rows?.[0]
   if (!data) return null
   const vendor = rowToVendor(data)
   vendor.email = user.email ?? null
@@ -368,15 +392,19 @@ export async function getVendorActivity(vendorId?: string | null, limit = 8): Pr
 
   const rfpIds = [...new Set([...(invites ?? []), ...(bids ?? [])].map((r) => r.rfp_id as string))]
   if (!rfpIds.length) return []
-  const { data: rfps } = await supabase.from("rfps").select("id, title, buyer_id").in("id", rfpIds)
-  const buyerIds = [...new Set((rfps ?? []).map((r) => r.buyer_id as string))]
+  // RLS hides other users' profiles from the session client, so buyer names
+  // come from the service role — only for RFPs this vendor is invited to.
+  const invitedRfpIds = new Set((invites ?? []).map((i) => i.rfp_id as string))
+  const admin = createAdminClient()
+  const { data: rfps } = await admin.from("rfps").select("id, title, buyer_id").in("id", rfpIds)
+  const buyerIds = [...new Set((rfps ?? []).filter((r) => invitedRfpIds.has(r.id as string)).map((r) => r.buyer_id as string))]
   const { data: buyers } = buyerIds.length
-    ? await supabase.from("profiles").select("id, company_name").in("id", buyerIds)
+    ? await admin.from("profiles").select("id, company_name").in("id", buyerIds)
     : { data: [] as { id: string; company_name: string | null }[] }
 
   const title = new Map((rfps ?? []).map((r) => [r.id as string, r.title as string]))
   const buyerOf = new Map((rfps ?? []).map((r) => [r.id as string, r.buyer_id as string]))
-  const buyerName = new Map((buyers ?? []).map((b) => [b.id as string, (b.company_name as string) ?? "a buyer"]))
+  const buyerName = new Map((buyers ?? []).map((b) => [b.id as string, (b.company_name as string) || "a buyer"]))
 
   const events: ActivityEvent[] = []
   for (const i of invites ?? []) {
@@ -391,10 +419,31 @@ export async function getVendorActivity(vendorId?: string | null, limit = 8): Pr
   return events.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, limit)
 }
 
+/** Starting point for a vendor who hasn't saved preferences: everything they sell, everywhere they're licensed. */
+export function defaultNotificationPrefs(vendor: { productsOffered: string[]; licensedStates: string[] }): NotificationPrefs {
+  return {
+    emailFrequency: "daily",
+    fuelTypes: [...vendor.productsOffered],
+    states: [...vendor.licensedStates],
+    minGallons: 0,
+    emergencyImmediate: true,
+  }
+}
+
+export function prefsFromRow(data: Record<string, unknown>): NotificationPrefs {
+  return {
+    emailFrequency: (data.email_frequency as NotificationPrefs["emailFrequency"]) ?? "daily",
+    fuelTypes: Array.isArray(data.fuel_types) ? (data.fuel_types as string[]) : [],
+    states: Array.isArray(data.states) ? (data.states as string[]) : [],
+    minGallons: Number(data.min_gallons) || 0,
+    emergencyImmediate: data.emergency_immediate !== false,
+  }
+}
+
 export async function getNotificationPrefs(
   vendorId: string
 ): Promise<NotificationPrefs> {
-  if (!isSupabaseConfigured()) return DEFAULT_PREFS
+  if (!isSupabaseConfigured()) return MOCK_PREFS
 
   const supabase = await createClient()
   const { data } = await supabase
@@ -403,26 +452,118 @@ export async function getNotificationPrefs(
     .eq("vendor_id", vendorId)
     .maybeSingle()
 
-  if (!data) return DEFAULT_PREFS
+  if (data) return prefsFromRow(data)
+  const { data: vendor } = await supabase.from("vendors").select("products_offered, licensed_states").eq("id", vendorId).maybeSingle()
+  return defaultNotificationPrefs({
+    productsOffered: (vendor?.products_offered as string[]) ?? [],
+    licensedStates: (vendor?.licensed_states as string[]) ?? [],
+  })
+}
+
+/**
+ * Dashboard KPIs. "Open" always means open for bidding right now, so the
+ * numbers match what the vendor can still act on.
+ */
+export async function getDashboardStats(
+  vendor: VendorProfile,
+  opportunities: VendorOpportunityListItem[],
+  vendorId?: string | null
+): Promise<VendorDashboardStats> {
+  const open = opportunities.filter((o) => o.biddingOpen && o.status !== "declined")
+  const base = {
+    activeRfpInvites: open.length,
+    profileCompleteness: profileCompleteness(vendor),
+  }
+  if (!isSupabaseConfigured() || !vendorId) {
+    return {
+      ...base,
+      newOpportunitiesThisWeek: open.filter((o) => o.status === "invited").length,
+      bidsSubmittedYtd: opportunities.filter((o) => o.status === "responded").length,
+    }
+  }
+
+  const supabase = await createClient()
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+  const yearStart = `${new Date().getUTCFullYear()}-01-01T00:00:00Z`
+  const [{ data: recent }, { count: bids }] = await Promise.all([
+    supabase.from("rfp_invitations").select("rfp_id").eq("vendor_id", vendorId).gte("invited_at", weekAgo),
+    supabase.from("rfp_responses").select("id", { count: "exact", head: true }).eq("vendor_id", vendorId).eq("status", "submitted").gte("submitted_at", yearStart),
+  ])
+  const openIds = new Set(open.map((o) => o.id))
   return {
-    emailFrequency: (data.email_frequency as NotificationPrefs["emailFrequency"]) ?? "daily",
-    fuelTypes: Array.isArray(data.fuel_types) ? (data.fuel_types as string[]) : [],
-    states: Array.isArray(data.states) ? (data.states as string[]) : [],
-    minGallons: typeof data.min_gallons === "number" ? data.min_gallons : 0,
-    emergencyImmediate: data.emergency_immediate !== false,
+    ...base,
+    newOpportunitiesThisWeek: (recent ?? []).filter((r) => openIds.has(r.rfp_id as string)).length,
+    bidsSubmittedYtd: bids ?? 0,
   }
 }
 
-export function getDashboardStats(
-  vendor: VendorProfile,
-  opportunities: Opportunity[]
-): VendorDashboardStats {
-  return {
-    newOpportunitiesThisWeek: opportunities.filter((o) => o.status === "new").length,
-    activeRfpInvites: opportunities.filter(
-      (o) => o.status !== "responded" && o.status !== "declined"
-    ).length,
-    bidsSubmittedYtd: opportunities.filter((o) => o.status === "responded").length,
-    profileCompleteness: profileCompleteness(vendor),
+/** Every bid this vendor has placed, newest first, with what became of it. */
+export async function listVendorBids(vendorId?: string | null): Promise<VendorBid[]> {
+  if (!isSupabaseConfigured()) {
+    const opportunities = await getOpportunities()
+    return opportunities
+      .filter((o) => o.status === "responded")
+      .map((o) => ({
+        id: `bid-${o.id}`,
+        rfpId: o.id,
+        title: o.title,
+        buyer: o.buyer,
+        quantityGallons: o.quantityGallons,
+        dueDate: o.dueDate,
+        submittedAt: o.dueDate,
+        pricingMode: "fixed" as const,
+        pricePerGallon: null,
+        totalPrice: null,
+        outcome: "submitted" as const,
+        biddingOpen: true,
+      }))
   }
+  if (!vendorId) return []
+
+  const supabase = await createClient()
+  const { data: bids } = await supabase
+    .from("rfp_responses")
+    .select("id, rfp_id, price_per_gallon, total_price, pricing_mode, submitted_at, status")
+    .eq("vendor_id", vendorId)
+    .order("submitted_at", { ascending: false })
+  if (!bids?.length) return []
+
+  // Service role: the award outcome and buyer name aren't readable through
+  // RLS. Scoped to RFPs this vendor has a response on.
+  const admin = createAdminClient()
+  const { data: rfps } = await admin
+    .from("rfps")
+    .select("id, title, buyer_id, quantity_gallons, bid_due_date, status, awarded_vendor_id")
+    .in("id", bids.map((b) => b.rfp_id as string))
+  const buyerIds = [...new Set((rfps ?? []).map((r) => r.buyer_id as string))]
+  const { data: buyers } = buyerIds.length
+    ? await admin.from("profiles").select("id, company_name").in("id", buyerIds)
+    : { data: [] as { id: string; company_name: string | null }[] }
+  const rfpById = new Map((rfps ?? []).map((r) => [r.id as string, r]))
+  const buyerName = new Map((buyers ?? []).map((b) => [b.id as string, (b.company_name as string) || "Buyer"]))
+
+  return bids.map((b) => {
+    const rfp = rfpById.get(b.rfp_id as string)
+    const status = (rfp?.status as RfpStatus) ?? "closed"
+    const due = (rfp?.bid_due_date as string) ?? null
+    const outcome: BidOutcome =
+      b.status === "withdrawn" ? "withdrawn"
+      : status === "awarded" ? (rfp?.awarded_vendor_id === vendorId ? "awarded" : "not_selected")
+      : status === "cancelled" ? "rfp_cancelled"
+      : "submitted"
+    return {
+      id: b.id as string,
+      rfpId: b.rfp_id as string,
+      title: (rfp?.title as string) ?? "RFP",
+      buyer: buyerName.get((rfp?.buyer_id as string) ?? "") ?? "Buyer",
+      quantityGallons: Number(rfp?.quantity_gallons) || 0,
+      dueDate: due,
+      submittedAt: b.submitted_at as string,
+      pricingMode: ((b.pricing_mode as string) ?? "fixed") as PricingMode,
+      pricePerGallon: b.price_per_gallon == null ? null : Number(b.price_per_gallon),
+      totalPrice: b.total_price == null ? null : Number(b.total_price),
+      outcome,
+      biddingOpen: status === "published" && (!due || new Date(due).getTime() >= Date.now()),
+    }
+  })
 }

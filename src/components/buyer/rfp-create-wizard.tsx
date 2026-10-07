@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { toDateInput } from "@/lib/rfp/dates"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { useFieldArray, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -72,7 +73,6 @@ const STEP_FIELDS: (keyof RfpWizardInput)[][] = [
 
 const EMPTY_ADDRESSES: AddressOptions = { sites: [], previous: [] }
 
-const toDateInput = (iso: string | null) => (iso ? iso.slice(0, 10) : "")
 
 function initialValues(rfp: BuyerRfpDetail): RfpWizardInput {
   return {
@@ -93,8 +93,8 @@ function initialValues(rfp: BuyerRfpDetail): RfpWizardInput {
     requiredCapabilities: rfp.requiredCapabilities.filter((c): c is (typeof DELIVERY_CAPABILITIES)[number] => (DELIVERY_CAPABILITIES as readonly string[]).includes(c)),
     requiredCertifications: rfp.requiredCertifications.filter((c): c is (typeof SPECIAL_CERTIFICATIONS)[number] => (SPECIAL_CERTIFICATIONS as readonly string[]).includes(c)),
     insuranceRequirements: rfp.insuranceRequirements ?? "",
-    supplierInviteMode: "auto",
-    selectedVendorIds: [],
+    supplierInviteMode: rfp.supplierInviteMode,
+    selectedVendorIds: rfp.selectedVendorIds,
     bidDueDate: toDateInput(rfp.bidDueDate),
     decisionDate: toDateInput(rfp.decisionDate),
     expectedAwardDate: toDateInput(rfp.expectedAwardDate),
@@ -106,12 +106,15 @@ export function RfpCreateWizard({
   addresses = EMPTY_ADDRESSES,
   initial,
   preview = false,
+  preselectVendorIds,
 }: {
   vendors: DirectoryVendor[]
   addresses?: AddressOptions
   /** Editing an existing draft */
   initial?: BuyerRfpDetail
   preview?: boolean
+  /** Start in "choose specific suppliers" with these ticked (from a supplier profile). */
+  preselectVendorIds?: string[]
 }) {
   const router = useRouter()
   const [uploadPrefix] = useState(() => initial?.id ?? `new-${Date.now().toString(36)}`)
@@ -137,8 +140,8 @@ export function RfpCreateWizard({
       requiredCapabilities: [],
       requiredCertifications: [],
       insuranceRequirements: "",
-      supplierInviteMode: "auto",
-      selectedVendorIds: [],
+      supplierInviteMode: preselectVendorIds?.length ? "manual" : "auto",
+      selectedVendorIds: preselectVendorIds ?? [],
       bidDueDate: "",
       decisionDate: "",
       expectedAwardDate: "",
@@ -163,8 +166,11 @@ export function RfpCreateWizard({
     ]
   )
 
+  // Auto mode pre-fills the list with the matches until the buyer edits it (or a
+  // saved draft already carries a selection); after that their choice stands.
+  const selectionTouched = useRef(Boolean(initial?.selectedVendorIds.length))
   useEffect(() => {
-    if (watchAll.supplierInviteMode === "auto" && matched.length) {
+    if (watchAll.supplierInviteMode === "auto" && matched.length && !selectionTouched.current) {
       form.setValue(
         "selectedVendorIds",
         matched.map((v) => v.id),
@@ -303,6 +309,7 @@ export function RfpCreateWizard({
                       <Input
                         type="number"
                         {...field}
+                        value={field.value == null || Number.isNaN(field.value) ? "" : field.value}
                         onChange={(e) => field.onChange(e.target.valueAsNumber)}
                       />
                     </FormControl>
@@ -362,7 +369,7 @@ export function RfpCreateWizard({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Recurrence</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value} onValueChange={field.onChange} items={RFP_RECURRENCE.map((r) => ({ value: r, label: r === "one_time" ? "One-time" : "Recurring" }))}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue />
@@ -386,7 +393,7 @@ export function RfpCreateWizard({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Urgency</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value} onValueChange={field.onChange} items={RFP_URGENCY.map((u) => ({ value: u, label: u.charAt(0).toUpperCase() + u.slice(1) }))}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue />
@@ -447,7 +454,7 @@ export function RfpCreateWizard({
                     control={form.control}
                     name={`deliveryAddresses.${i}.address`}
                     render={({ field }) => (
-                      <FormItem className="flex-1">
+                      <FormItem className="min-w-0 flex-1">
                         <FormControl>
                           <AddressCombobox
                         value={field.value}
@@ -467,9 +474,11 @@ export function RfpCreateWizard({
                           <FormField
                             control={form.control}
                             name={`deliveryAddresses.${i}.gallons`}
-                            render={({ field: g }) => (
+                            render={({ field: g, fieldState }) => (
+                              <div>
                               <Input
                                 type="number"
+                                aria-invalid={fieldState.error ? true : undefined}
                                 min={0}
                                 placeholder="Gallons at this site"
                                 name={g.name}
@@ -478,14 +487,18 @@ export function RfpCreateWizard({
                                 value={g.value == null || Number.isNaN(g.value) ? "" : String(g.value)}
                                 onChange={(e) => g.onChange(e.target.value === "" ? null : e.target.valueAsNumber)}
                               />
+                              {fieldState.error ? <p className="mt-1 text-sm text-destructive">{fieldState.error.message}</p> : null}
+                              </div>
                             )}
                           />
                           <FormField
                             control={form.control}
                             name={`deliveryAddresses.${i}.tankSizeGallons`}
-                            render={({ field: g }) => (
+                            render={({ field: g, fieldState }) => (
+                              <div>
                               <Input
                                 type="number"
+                                aria-invalid={fieldState.error ? true : undefined}
                                 min={0}
                                 placeholder="Tank size (gal)"
                                 name={g.name}
@@ -494,6 +507,8 @@ export function RfpCreateWizard({
                                 value={g.value == null || Number.isNaN(g.value) ? "" : String(g.value)}
                                 onChange={(e) => g.onChange(e.target.value === "" ? null : e.target.valueAsNumber)}
                               />
+                              {fieldState.error ? <p className="mt-1 text-sm text-destructive">{fieldState.error.message}</p> : null}
+                              </div>
                             )}
                           />
                           <FormField
@@ -536,19 +551,26 @@ export function RfpCreateWizard({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Required delivery dates</FormLabel>
-                  {field.value.map((_, i) => (
-                    <Input
-                      key={i}
-                      type="date"
-                      className="mt-2"
-                      value={field.value[i] ?? ""}
-                      onChange={(e) => {
-                        const next = [...field.value]
-                        next[i] = e.target.value
-                        field.onChange(next)
-                      }}
-                    />
-                  ))}
+                  {field.value.map((_, i) => {
+                    // Item errors live at deliveryDates[i]; FormMessage below only shows the array-level one.
+                    const itemError = (form.formState.errors.deliveryDates as Array<{ message?: string } | undefined> | undefined)?.[i]?.message
+                    return (
+                      <div key={i}>
+                        <Input
+                          type="date"
+                          className="mt-2"
+                          aria-invalid={itemError ? true : undefined}
+                          value={field.value[i] ?? ""}
+                          onChange={(e) => {
+                            const next = [...field.value]
+                            next[i] = e.target.value
+                            field.onChange(next)
+                          }}
+                        />
+                        {itemError ? <p className="mt-1 text-sm text-destructive">{itemError}</p> : null}
+                      </div>
+                    )
+                  })}
                   <Button
                     type="button"
                     variant="outline"
@@ -665,7 +687,11 @@ export function RfpCreateWizard({
                     <input
                       type="radio"
                       checked={field.value === "auto"}
-                      onChange={() => field.onChange("auto")}
+                      onChange={() => {
+                        // Back to auto: start again from the full matched list.
+                        selectionTouched.current = false
+                        field.onChange("auto")
+                      }}
                     />
                     <span>
                       <span className="font-medium text-navy">
@@ -681,7 +707,11 @@ export function RfpCreateWizard({
                     <input
                       type="radio"
                       checked={field.value === "manual"}
-                      onChange={() => field.onChange("manual")}
+                      onChange={() => {
+                        // Start the manual pick from an empty list, not the auto-matched one.
+                        if (field.value !== "manual") form.setValue("selectedVendorIds", [])
+                        field.onChange("manual")
+                      }}
                     />
                     <span>
                       <span className="font-medium text-navy">Choose specific suppliers</span>
@@ -712,7 +742,10 @@ export function RfpCreateWizard({
                 }}
                 candidates={matched}
                 selectedIds={watchAll.selectedVendorIds ?? []}
-                onSelectionChange={(ids) => form.setValue("selectedVendorIds", ids, { shouldValidate: true })}
+                onSelectionChange={(ids) => {
+                  selectionTouched.current = true
+                  form.setValue("selectedVendorIds", ids, { shouldValidate: true, shouldDirty: true })
+                }}
               />
             )}
             <ul className={cn("max-h-48 space-y-2 overflow-y-auto rounded-lg border border-border p-3", watchAll.supplierInviteMode === "auto" && "hidden")}>
@@ -735,11 +768,13 @@ export function RfpCreateWizard({
               ))}
             </ul>
             <SupplierPickerModal
+              // Remount per open so the picker always starts from the current selection.
+              key={pickerOpen ? "open" : "closed"}
               open={pickerOpen}
               onOpenChange={setPickerOpen}
               vendors={vendors}
               selectedIds={form.getValues("selectedVendorIds")}
-              onConfirm={(ids) => form.setValue("selectedVendorIds", ids)}
+              onConfirm={(ids) => form.setValue("selectedVendorIds", ids, { shouldValidate: true, shouldDirty: true })}
             />
           </div>
         )}
@@ -778,7 +813,7 @@ export function RfpCreateWizard({
             </p>
             <p>
               <strong>Fuel:</strong> {watchAll.fuelType} · {watchAll.quantityGallons?.toLocaleString()}{" "}
-              gal · {watchAll.urgency}
+              gal · <span className="capitalize">{watchAll.urgency}</span>
             </p>
             <p>
               <strong>Pricing:</strong> {PRICING_MODE_LABEL[watchAll.pricingMode ?? "fixed"]}

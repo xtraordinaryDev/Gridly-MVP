@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { FileText, Loader2, Truck, Upload } from "lucide-react"
 
-import { createClient } from "@/lib/supabase/client"
+import { uploadDeliveryDoc } from "@/components/attachments"
 import type { OrderView } from "@/lib/data/orders"
 import { logVendorDelivery } from "@/app/vendor/(portal)/orders/actions"
 import { Button } from "@/components/ui/button"
@@ -20,7 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-const today = () => new Date().toISOString().slice(0, 10)
+// The user's own calendar day (UTC would roll over mid-evening in the US).
+const today = () => new Date().toLocaleDateString("en-CA")
 
 export function LogDeliveryDialog({
   open,
@@ -47,16 +48,26 @@ export function LogDeliveryDialog({
   const [ticketNumber, setTicketNumber] = useState("")
   const [notes, setNotes] = useState("")
   const [bol, setBol] = useState<{ name: string; path: string } | null>(null)
+  const [tried, setTried] = useState(false)
+
+  const max = today()
+  const gal = Number(gallons)
+  const errors = {
+    deliveredAt: !deliveredAt ? "Delivery date is required" : deliveredAt > max ? "Delivery date can't be in the future" : null,
+    // The server rejects anything over 125% of the order as a likely typo.
+    gallons: !(gal > 0) ? "Enter gallons delivered" : order && gal > order.gallons * 1.25 ? `That's more than 125% of the ${order.gallons.toLocaleString()} gal ordered. Check the ticket, or ask the buyer to place another order for the extra.` : null,
+    siteAddress: siteAddress.trim().length < 3 ? "Site is required" : null,
+    ticketNumber: !ticketNumber.trim() ? "Ticket number is required" : null,
+  }
+  const invalid = Object.values(errors).some(Boolean)
+  const show = (key: keyof typeof errors) => (tried || key === "deliveredAt" || (key === "gallons" && gal > 0)) && errors[key] ? <span className="mt-1 block text-xs font-normal text-destructive">{errors[key]}</span> : null
+  const overPct = order && gal > order.gallons * 1.1 && gal <= order.gallons * 1.25 ? Math.round((gal / order.gallons - 1) * 100) : 0
 
   async function uploadBol(file: File) {
     setUploading(true)
     try {
-      const path = `deliveries/${contractId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`
-      if (!preview) {
-        const { error } = await createClient().storage.from("delivery-docs").upload(path, file, { contentType: file.type || undefined })
-        if (error) throw new Error(error.message)
-      }
-      setBol({ name: file.name, path })
+      // Server-authorised signed upload: the browser has no direct write access to storage.
+      setBol(await uploadDeliveryDoc(file, contractId, preview))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed")
     } finally {
@@ -76,19 +87,28 @@ export function LogDeliveryDialog({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium">
             Delivered on
-            <Input type="date" value={deliveredAt} onChange={(e) => setDeliveredAt(e.target.value)} className="mt-1" />
+            <Input type="date" max={max} value={deliveredAt} onChange={(e) => setDeliveredAt(e.target.value)} className="mt-1" aria-invalid={!!errors.deliveredAt} />
+            {show("deliveredAt")}
           </label>
           <label className="block text-sm font-medium">
             Gallons delivered
             <Input type="number" min={0} step="0.01" value={gallons} onChange={(e) => setGallons(e.target.value)} className="mt-1" />
+            {show("gallons")}
           </label>
+          {order && overPct > 0 ? (
+            <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900 sm:col-span-2">
+              {`${gal.toLocaleString()} gal is ${overPct}% more than the ${order.gallons.toLocaleString()} gal ordered. Check the ticket — if it's right, logging it confirms the over-delivery and the buyer will be billed for the full amount.`}
+            </p>
+          ) : null}
           <label className="block text-sm font-medium sm:col-span-2">
             Site
             <Input value={siteAddress} onChange={(e) => setSiteAddress(e.target.value)} className="mt-1" placeholder="Street, city, state ZIP" />
+            {show("siteAddress")}
           </label>
           <label className="block text-sm font-medium">
             Ticket #
-            <Input value={ticketNumber} onChange={(e) => setTicketNumber(e.target.value)} className="mt-1" placeholder="T-00000" />
+            <Input required value={ticketNumber} onChange={(e) => setTicketNumber(e.target.value)} className="mt-1" placeholder="T-00000" aria-invalid={tried && !!errors.ticketNumber} />
+            {show("ticketNumber")}
           </label>
           <div className="text-sm font-medium">
             Bill of lading
@@ -111,7 +131,9 @@ export function LogDeliveryDialog({
           <Button
             disabled={isPending || uploading}
             className="gap-2"
-            onClick={() =>
+            onClick={() => {
+              setTried(true)
+              if (invalid) return
               startTransition(async () => {
                 const res = await logVendorDelivery({ contractId, orderId: order?.id ?? "", deliveredAt, siteAddress, gallons: Number(gallons), ticketNumber, bolPath: bol?.path ?? "", bolName: bol?.name ?? "", notes })
                 if (res.ok) {
@@ -120,10 +142,10 @@ export function LogDeliveryDialog({
                   router.refresh()
                 } else toast.error(res.message)
               })
-            }
+            }}
           >
             {isPending ? <Loader2 className="size-4 animate-spin" /> : <Truck className="size-4" />}
-            Log delivery
+            {overPct > 0 ? "Log over-delivery" : "Log delivery"}
           </Button>
         </DialogFooter>
       </DialogContent>

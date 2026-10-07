@@ -24,7 +24,6 @@ import {
 import {
   getCurrentVendor,
   getDashboardStats,
-  getOpportunities,
   getVendorActivity,
 } from "@/lib/data/vendor"
 import { getVendorInvoiceStats } from "@/lib/data/invoices"
@@ -73,8 +72,7 @@ export default async function VendorDashboardPage() {
   if (!vendor) return null
 
   const vendorId = await resolveVendorIdForSession(profile.id, preview)
-  const [opportunities, oppList, activity, inv, em, docs, perf, orders] = await Promise.all([
-    getOpportunities(),
+  const [oppList, activity, inv, em, docs, perf, orders] = await Promise.all([
     listVendorOpportunities(vendorId),
     getVendorActivity(vendorId),
     getVendorInvoiceStats(vendorId),
@@ -88,13 +86,13 @@ export default async function VendorDashboardPage() {
     .concat(docs.filter((d) => d.expiresSoon).map((d) => `${DOCUMENT_TYPES.find((t) => t.type === d.type)?.label ?? d.type} expires soon`))
   const openOrders = orders.filter((o) => !["delivered", "cancelled"].includes(o.status))
   const emergencies = openOrders.filter((o) => o.urgency === "emergency")
-  const stats = getDashboardStats(vendor, opportunities)
+  const stats = await getDashboardStats(vendor, oppList, vendorId)
 
   const kpis = [
-    { label: "New opportunities this week", value: stats.newOpportunitiesThisWeek, icon: Sparkles, accent: "text-brand-blue bg-brand-blue/10" },
-    { label: "Active RFPs invited to", value: stats.activeRfpInvites, icon: Truck, accent: "text-navy bg-navy/10" },
-    { label: "Bids submitted YTD", value: stats.bidsSubmittedYtd, icon: Send, accent: "text-emerald bg-emerald/15" },
-    { label: "Profile completeness", value: `${stats.profileCompleteness}%`, icon: Gauge, accent: "text-amber-600 bg-amber-100" },
+    { label: "New opportunities this week", hint: "Invited in the last 7 days, still open", value: stats.newOpportunitiesThisWeek, icon: Sparkles, accent: "text-brand-blue bg-brand-blue/10" },
+    { label: "Active RFPs invited to", hint: "Open for bidding now", value: stats.activeRfpInvites, icon: Truck, accent: "text-navy bg-navy/10" },
+    { label: "Bids submitted YTD", hint: `Since Jan 1, ${new Date().getUTCFullYear()}`, value: stats.bidsSubmittedYtd, icon: Send, accent: "text-emerald bg-emerald/15" },
+    { label: "Profile completeness", hint: undefined, value: `${stats.profileCompleteness}%`, icon: Gauge, accent: "text-amber-600 bg-amber-100" },
   ]
 
   return (
@@ -142,26 +140,27 @@ export default async function VendorDashboardPage() {
       ) : null}
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {kpis.map((kpi) => (
           <Card key={kpi.label}>
-            <CardContent className="p-5">
+            <CardContent className="p-4 sm:p-5">
               <span className={`flex size-10 items-center justify-center rounded-xl ${kpi.accent}`}>
                 <kpi.icon className="size-5" />
               </span>
               <p className="mt-4 text-3xl font-bold text-navy">{kpi.value}</p>
               <p className="text-sm text-muted-foreground">{kpi.label}</p>
+              {kpi.hint ? <p className="mt-0.5 text-xs text-muted-foreground/70">{kpi.hint}</p> : null}
             </CardContent>
           </Card>
         ))}
       </div>
 
       {/* Performance + fulfilment */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Buyer rating</p><div className="mt-2 flex items-center gap-2">{perf.avgStars != null ? <><Stars value={perf.avgStars} size="size-5" /><span className="text-2xl font-bold text-navy">{perf.avgStars.toFixed(1)}</span></> : <span className="text-2xl font-bold text-navy">—</span>}</div><p className="text-xs text-muted-foreground">{perf.ratingCount} rating{perf.ratingCount === 1 ? "" : "s"}</p></CardContent></Card>
-        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">On-time deliveries</p><p className="mt-2 text-2xl font-bold text-navy">{perf.onTimePct == null ? "—" : `${perf.onTimePct}%`}</p><p className="text-xs text-muted-foreground">{perf.deliveriesCount} logged</p></CardContent></Card>
-        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Open orders</p><p className="mt-2 text-2xl font-bold text-navy">{openOrders.length}</p><Link href="/vendor/orders" className="text-xs text-brand-blue hover:underline">Confirm &amp; schedule</Link></CardContent></Card>
-        <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Contracts won</p><p className="mt-2 text-2xl font-bold text-navy">{perf.awardsCount}</p><p className="text-xs text-muted-foreground">{perf.activeContracts} active</p></CardContent></Card>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <Card><CardContent className="p-4 sm:p-5"><p className="text-sm text-muted-foreground">Buyer rating</p><div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">{perf.avgStars != null ? <><Stars value={perf.avgStars} size="size-4 sm:size-5" /><span className="shrink-0 text-2xl font-bold text-navy">{perf.avgStars.toFixed(1)}</span></> : <span className="text-2xl font-bold text-navy">—</span>}</div><p className="text-xs text-muted-foreground">{perf.ratingCount} rating{perf.ratingCount === 1 ? "" : "s"}</p></CardContent></Card>
+        <Card><CardContent className="p-4 sm:p-5"><p className="text-sm text-muted-foreground">On-time deliveries</p><p className="mt-2 text-2xl font-bold text-navy">{perf.onTimePct == null ? "—" : `${perf.onTimePct}%`}</p><p className="text-xs text-muted-foreground">{perf.deliveriesCount} logged</p></CardContent></Card>
+        <Card><CardContent className="p-4 sm:p-5"><p className="text-sm text-muted-foreground">Open orders</p><p className="mt-2 text-2xl font-bold text-navy">{openOrders.length}</p><Link href="/vendor/orders" className="text-xs text-brand-blue hover:underline">Confirm &amp; schedule</Link></CardContent></Card>
+        <Card><CardContent className="p-4 sm:p-5"><p className="text-sm text-muted-foreground">Contracts won</p><p className="mt-2 text-2xl font-bold text-navy">{perf.awardsCount}</p><p className="text-xs text-muted-foreground">{perf.activeContracts} active</p></CardContent></Card>
       </div>
 
       {/* Receivables */}
@@ -172,7 +171,7 @@ export default async function VendorDashboardPage() {
             View invoices
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatTile label="Outstanding" value={moneyCompact(inv.outstanding)} title={money(inv.outstanding)} hint={`${inv.openCount} open`} icon={Hourglass} accent="text-brand-blue bg-brand-blue/10" href="/vendor/invoices" />
           <StatTile label="Overdue" value={moneyCompact(inv.overdue)} title={money(inv.overdue)} hint={`${inv.overdueCount}`} icon={AlertTriangle} accent={inv.overdue > 0 ? "text-red-700 bg-red-100" : "text-muted-foreground bg-muted"} href="/vendor/invoices" />
           <StatTile label="Paid YTD" value={moneyCompact(inv.paidYtd)} title={money(inv.paidYtd)} hint={`${money(inv.paidThisMonth)} this month`} icon={CircleDollarSign} accent="text-emerald bg-emerald/15" href="/vendor/invoices" />
@@ -191,7 +190,7 @@ export default async function VendorDashboardPage() {
           <h2 className="text-lg font-semibold text-navy">Emissions delivered</h2>
           <p className="text-sm text-muted-foreground">Scope 1 CO2e your customers report from fuel you invoiced, {em.year} year to date.</p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatTile label="CO2e delivered YTD" value={formatTons(em.tonsYtd)} hint={`${em.gallonsYtd.toLocaleString("en-US")} gal`} icon={Leaf} accent="text-emerald bg-emerald/15" />
           <StatTile label="Carbon intensity" value={em.intensityKgPerGal == null ? "—" : `${em.intensityKgPerGal.toFixed(2)} kg/gal`} icon={Leaf} accent="text-navy bg-navy/10" />
           <StatTile label="Renewable share" value={`${em.renewableSharePct}%`} hint="of gallons delivered" icon={Sprout} accent="text-emerald bg-emerald/15" />
@@ -199,14 +198,14 @@ export default async function VendorDashboardPage() {
         </div>
         <div className="grid gap-6 lg:grid-cols-2">
           <SingleBars title="Emissions delivered by month" unit="t CO2e" color="#10B981" series={em.monthly.map((m) => ({ label: m.label, value: m.tons }))} />
-          <RankedBars title="Emissions by buyer" items={em.byParty} color="#10B981" empty="No fuel invoiced yet." />
+          <RankedBars title="Emissions by buyer" items={em.byParty} color="#10B981" empty="No fuel invoiced yet." format={(t) => `${formatTons(t)} CO2e`} />
         </div>
         <p className="text-xs text-muted-foreground">Factors: {EMISSION_FACTOR_SOURCE}.</p>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Recent opportunities */}
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-navy">
               Recent opportunities
@@ -225,7 +224,7 @@ export default async function VendorDashboardPage() {
         <div>
           <h2 className="mb-3 text-lg font-semibold text-navy">Activity</h2>
           <Card>
-            <CardContent className="p-5">
+            <CardContent className="p-4 sm:p-5">
               <ol className="space-y-5">
                 {activity.map((event, i) => {
                   const Icon = ACTIVITY_ICON[event.type] ?? CheckCircle2

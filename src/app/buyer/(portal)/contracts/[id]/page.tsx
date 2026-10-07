@@ -21,5 +21,5 @@ export default async function BuyerContractPage({ params }: { params: Promise<{ 
   ])
   if (!contract) notFound()
   const [messages, rating] = await Promise.all([listThread(viewer, "contract", id), getContractRating(id)])
-  return <ContractDetailView contract={contract} orders={orders} deliveries={deliveries} invoices={invoices.filter((i) => i.contractId === id)} role="buyer" preview={preview} extra={<div className="grid gap-6 lg:grid-cols-3"><div className="lg:col-span-2"><MessageThread threadType="contract" threadId={id} messages={messages} role="buyer" title="Messages" description="Scheduling changes, site access, anything about this contract." /></div><RatingCard contractId={id} vendorName={contract.vendorName} existing={rating} editable={true} /></div>} />
+  return <div className="p-4 sm:p-6 lg:p-8"><ContractDetailView contract={contract} orders={orders} deliveries={deliveries} invoices={invoices.filter((i) => i.contractId === id)} role="buyer" preview={preview} extra={<div className="grid gap-6 lg:grid-cols-3"><div className="lg:col-span-2"><MessageThread threadType="contract" threadId={id} messages={messages} role="buyer" title="Messages" description="Scheduling changes, site access, anything about this contract." /></div><RatingCard contractId={id} vendorName={contract.vendorName} existing={rating} editable={true} /></div>} /></div>
 }

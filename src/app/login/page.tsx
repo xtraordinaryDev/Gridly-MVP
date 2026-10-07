@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Zap } from "lucide-react"
+import { redirect } from "next/navigation"
+import { GridLinkLogo } from "@/components/brand/logo"
 
+import { getSessionProfile, roleHomePath } from "@/lib/auth"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { isDemoModeEnabled } from "@/lib/env"
 import { LoginForm } from "./login-form"
@@ -10,17 +12,16 @@ export const metadata: Metadata = {
   title: "Sign in — GridLink",
 }
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  // Already signed in: the form would only confuse — go to their portal.
+  const profile = await getSessionProfile()
+  if (profile) redirect(roleHomePath(profile.role))
+
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center bg-accent/30 px-4 py-16">
       <div className="w-full max-w-md">
         <Link href="/" className="mb-6 flex items-center justify-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-navy text-navy-foreground">
-            <Zap className="size-4 fill-brand-blue text-brand-blue" />
-          </span>
-          <span className="text-lg font-bold tracking-tight text-navy">
-            Grid<span className="text-brand-blue">Link</span>
-          </span>
+          <GridLinkLogo />
         </Link>
 
         <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">

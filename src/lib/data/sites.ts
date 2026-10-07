@@ -68,12 +68,18 @@ export async function addBuyerSite(buyerId: string, site: { name: string; addres
     return { ok: true }
   }
   const row: Record<string, unknown> = { buyer_id: buyerId, name: site.name.trim(), address: site.address.trim(), state: site.state || null }
+  const { data: existing } = await createAdminClient().from("buyer_sites").select("id, name, address").eq("buyer_id", buyerId)
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+  if ((existing ?? []).some((s) => same(s.name as string, site.name) && same(s.address as string, site.address))) {
+    return { ok: false, message: "You've already saved this site." }
+  }
   // Geocode up front so station prices show on the next dashboard load. Best
   // effort: a failure here leaves geocoded_at null and the cron retries later.
   if (isGoogleMapsConfigured()) {
     try {
       const g = await geocodeAddress([row.address, row.state].filter(Boolean).join(", "))
-      Object.assign(row, { geocoded_at: new Date().toISOString() }, g ? { lat: g.lat, lng: g.lng, postal_code: g.postalCode, geo_cell: cellFor(g.lat, g.lng) } : {})
+      // Stamp geocoded_at only on a hit; a miss stays pending so the daily job retries it once more.
+      if (g) Object.assign(row, { geocoded_at: new Date().toISOString(), lat: g.lat, lng: g.lng, postal_code: g.postalCode, geo_cell: cellFor(g.lat, g.lng) })
     } catch (err) {
       console.error("[sites] geocode failed", err)
     }

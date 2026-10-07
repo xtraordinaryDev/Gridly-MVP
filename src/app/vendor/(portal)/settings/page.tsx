@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { LogOut } from "lucide-react"
 
 import { requireVendor } from "@/lib/auth"
@@ -49,13 +48,14 @@ export default async function VendorSettingsPage() {
       </Card>
 
       <div className="flex justify-end">
-        <Link
-          href="/login"
+        {/* Plain anchor: /logout clears the session server-side before /login. */}
+        <a
+          href="/logout"
           className={cn(buttonVariants({ variant: "outline" }), "gap-2")}
         >
           <LogOut className="size-4" />
           Sign out
-        </Link>
+        </a>
       </div>
     </div>
   )

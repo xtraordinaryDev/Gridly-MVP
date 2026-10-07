@@ -23,9 +23,11 @@ export default async function BuyerRfpDetailPage({
   if (!rfp) notFound()
   const viewer = { role: "buyer" as const, id: profile.id }
   const activeVendorId = vendor && rfp.invitations.some((i) => i.vendorId === vendor) ? vendor : null
-  const [parties, messages, perfMap, stored] = await Promise.all([
+  // Load the open thread first: reading it marks messages read, and the unread
+  // badges computed next should already reflect that.
+  const messages = await listThread(viewer, "rfp", id, activeVendorId)
+  const [parties, perfMap, stored] = await Promise.all([
     listRfpThreadParties(profile.id, id),
-    listThread(viewer, "rfp", id, activeVendorId),
     listVendorPerformance(rfp.responses.map((r) => r.vendorId)),
     getStoredBrief(id, profile.id),
   ])

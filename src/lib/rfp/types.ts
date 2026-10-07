@@ -90,6 +90,9 @@ export interface BuyerRfpDetail {
   awardedVendorName: string | null
   createdAt: string
   publishedAt: string | null
+  /** How suppliers were chosen when this RFP was last saved (drafts restore it). */
+  supplierInviteMode: "auto" | "manual"
+  selectedVendorIds: string[]
   invitations: RfpInvitationView[]
   responses: RfpResponseView[]
   activity: RfpActivityItem[]

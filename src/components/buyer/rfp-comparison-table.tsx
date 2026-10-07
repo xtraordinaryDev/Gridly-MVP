@@ -7,6 +7,8 @@ import type { VendorPerformance } from "@/lib/data/ratings"
 import Link from "next/link"
 import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
+import { money } from "@/lib/invoicing/types"
 
 import type { BuyerRfpDetail, RfpResponseView } from "@/lib/rfp/types"
 import { awardContract } from "@/app/buyer/(portal)/rfps/actions"
@@ -40,7 +42,7 @@ const ROWS: { key: string; label: string; render: (r: RfpResponseView) => React.
   {
     key: "total",
     label: "Total price",
-    render: (r) => `$${r.totalPrice.toLocaleString()}`,
+    render: (r) => money(r.totalPrice),
   },
   {
     key: "terms",
@@ -79,6 +81,7 @@ export function RfpComparisonTable({
   performance?: Record<string, VendorPerformance>
 }) {
   const [pending, startTransition] = useTransition()
+  const router = useRouter()
   const [awardVendor, setAwardVendor] = useState<RfpResponseView | null>(null)
 
   const lowestTotal = useMemo(() => {
@@ -203,9 +206,11 @@ export function RfpComparisonTable({
                   if (res.ok) {
                     toast.success("Contract awarded")
                     setAwardVendor(null)
-                    window.location.reload()
+                    router.refresh()
                   } else {
                     toast.error(res.message)
+                    setAwardVendor(null)
+                    router.refresh()
                   }
                 })
               }}

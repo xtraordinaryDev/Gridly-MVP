@@ -16,22 +16,18 @@ import {
 } from "@/lib/data/rfps"
 import { OpportunityStatusBadge } from "@/components/vendor/opportunity-status-badge"
 import { VendorBidForm } from "@/components/vendor/vendor-bid-form"
-import { VendorOpportunityActions, WithdrawBidButton } from "@/components/vendor/vendor-opportunity-actions"
+import { VendorOpportunityActions } from "@/components/vendor/vendor-opportunity-actions"
+import { SubmittedBid } from "@/components/vendor/submitted-bid"
+import { money } from "@/lib/invoicing/types"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { AttachmentList } from "@/components/attachments"
 import { MessageThread } from "@/components/messages/message-thread"
 import { listThread } from "@/lib/data/messages"
 import { PRICING_MODE_LABEL } from "@/lib/schemas/rfp-wizard"
+import { formatRfpDate } from "@/lib/rfp/dates"
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })
-}
+const formatDate = (value: string | null) => formatRfpDate(value, "long")
 
 export default async function OpportunityDetailPage({
   params,
@@ -158,34 +154,56 @@ export default async function OpportunityDetailPage({
         {o.existingResponse ? (
           <Card>
             <CardContent className="p-6">
-              <h2 className="font-semibold text-navy">Your submitted bid</h2>
-              <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-muted-foreground">{o.existingResponse.pricingMode === "index" ? "Pricing" : "Price / gal"}</dt>
-                  <dd className="font-medium">
-                    {o.existingResponse.pricingMode === "index"
-                      ? `${o.existingResponse.indexName ?? "Index"} ${(o.existingResponse.differential ?? 0) >= 0 ? "+" : "−"} $${Math.abs(o.existingResponse.differential ?? 0).toFixed(4)} (≈ $${o.existingResponse.pricePerGallon.toFixed(4)})`
-                      : `$${o.existingResponse.pricePerGallon.toFixed(4)}`}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Total</dt>
-                  <dd className="font-medium">
-                    ${o.existingResponse.totalPrice.toLocaleString()}
-                  </dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-muted-foreground">Terms</dt>
-                  <dd>{o.existingResponse.deliveryTerms}</dd>
-                </div>
-                {o.existingResponse.attachmentPath ? (
-                  <div className="sm:col-span-2">
-                    <dt className="text-muted-foreground">Attachment</dt>
-                    <dd><AttachmentList attachments={[{ name: o.existingResponse.attachmentName ?? "Attachment", path: o.existingResponse.attachmentPath }]} className="mt-1" /></dd>
+              <SubmittedBid
+                rfpId={id}
+                quantityGallons={o.quantityGallons}
+                pricingMode={o.pricingMode}
+                indexName={o.indexName}
+                preview={preview}
+                response={o.existingResponse}
+                biddingOpen={o.biddingOpen}
+              >
+                <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-muted-foreground">{o.existingResponse.pricingMode === "index" ? "Pricing" : "Price / gal"}</dt>
+                    <dd className="font-medium">
+                      {o.existingResponse.pricingMode === "index"
+                        ? `${o.existingResponse.indexName ?? "Index"} ${(o.existingResponse.differential ?? 0) >= 0 ? "+" : "−"} $${Math.abs(o.existingResponse.differential ?? 0).toFixed(4)} (≈ $${o.existingResponse.pricePerGallon.toFixed(4)})`
+                        : `$${o.existingResponse.pricePerGallon.toFixed(4)}`}
+                    </dd>
                   </div>
-                ) : null}
-              </dl>
-              {o.biddingOpen ? <WithdrawBidButton rfpId={id} /> : null}
+                  <div>
+                    <dt className="text-muted-foreground">{o.existingResponse.pricingMode === "index" ? "Estimated total" : "Total"}</dt>
+                    <dd className="font-medium tabular-nums">{money(o.existingResponse.totalPrice)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Valid for</dt>
+                    <dd className="font-medium">
+                      {o.existingResponse.validityDays ? `${o.existingResponse.validityDays} day${o.existingResponse.validityDays === 1 ? "" : "s"}` : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Submitted</dt>
+                    <dd className="font-medium">{formatRfpDate(o.existingResponse.submittedAt)}</dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-muted-foreground">Terms</dt>
+                    <dd className="whitespace-pre-wrap">{o.existingResponse.deliveryTerms}</dd>
+                  </div>
+                  {o.existingResponse.notes ? (
+                    <div className="sm:col-span-2">
+                      <dt className="text-muted-foreground">Notes</dt>
+                      <dd className="whitespace-pre-wrap">{o.existingResponse.notes}</dd>
+                    </div>
+                  ) : null}
+                  {o.existingResponse.attachmentPath ? (
+                    <div className="sm:col-span-2">
+                      <dt className="text-muted-foreground">Attachment</dt>
+                      <dd><AttachmentList attachments={[{ name: o.existingResponse.attachmentName ?? "Attachment", path: o.existingResponse.attachmentPath, size: 0 }]} className="mt-1" /></dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </SubmittedBid>
             </CardContent>
           </Card>
         ) : canBid ? (

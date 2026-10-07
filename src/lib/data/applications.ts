@@ -3,6 +3,7 @@ import "server-only"
 import type { DocumentRef } from "@/lib/schemas/vendor-application"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { isApplicationDocumentPath } from "@/lib/storage/paths"
 
 export type ApplicationStatus =
   | "pending_review"
@@ -26,6 +27,12 @@ export interface ApplicationDetail {
   source: ApplicationSource
   submittedAt: string | null
   reviewedAt: string | null
+  /**
+   * The full registration form came in. An invite nobody has opened, or a short
+   * "Become a Supplier" interest form, has not — there is no enum value for
+   * that, so it is read off columns only the registration fills.
+   */
+  registrationSubmitted: boolean
 
   companyName: string
   corporateAddress: string | null
@@ -90,11 +97,49 @@ export interface ApplicationDetail {
 export interface ApplicationListItem {
   id: string
   companyName: string
+  contactEmail: string | null
   submittedAt: string | null
   source: ApplicationSource
   status: ApplicationStatus
+  /** Open, but the supplier still owes us the full registration. */
+  awaitingRegistration: boolean
+  invitationToken: string
   products: string[]
   states: string[]
+}
+
+export interface ApplicationActivity {
+  id: string
+  action: "invited" | "approved" | "info_requested" | "rejected" | "note"
+  notes: string | null
+  adminName: string | null
+  createdAt: string
+}
+
+export const OPEN_STATUSES: ApplicationStatus[] = ["pending_review", "info_requested"]
+
+export function isAwaitingRegistration(a: Pick<ApplicationDetail, "status" | "registrationSubmitted">): boolean {
+  return a.status === "pending_review" && !a.registrationSubmitted
+}
+
+/** The documents an approval can stand on: stored, and inside this application's own folder. */
+export function applicationDocument(
+  a: Pick<ApplicationDetail, "id" | "documents">,
+  key: keyof ApplicationDocuments,
+  preview = false
+): DocumentRef | null {
+  const doc = a.documents?.[key]
+  if (!doc?.path) return null
+  return preview || isApplicationDocumentPath(doc.path, a.id) ? doc : null
+}
+
+/** Why this application can't be approved yet — empty when it can. */
+export function approvalBlockers(a: ApplicationDetail, preview = false): string[] {
+  const missing: string[] = []
+  if (!a.registrationSubmitted) missing.push("Full registration form")
+  if (!applicationDocument(a, "w9Form", preview)) missing.push("W-9")
+  if (!applicationDocument(a, "certificateOfInsurance", preview)) missing.push("Certificate of Insurance")
+  return missing
 }
 
 export interface DashboardStats {
@@ -114,6 +159,7 @@ function mock(partial: Partial<ApplicationDetail> & { id: string; companyName: s
     source: "self_applied",
     submittedAt: null,
     reviewedAt: null,
+    registrationSubmitted: Boolean(partial.submittedAt),
     corporateAddress: null,
     stateOfIncorporation: null,
     entityType: null,
@@ -368,7 +414,7 @@ const MOCK_APPLICATIONS: ApplicationDetail[] = [
 // ---------------------------------------------------------------------------
 // Row mapping (Supabase → ApplicationDetail)
 // ---------------------------------------------------------------------------
-function rowToDetail(row: Record<string, unknown>): ApplicationDetail {
+export function rowToDetail(row: Record<string, unknown>): ApplicationDetail {
   const s = (v: unknown) => (typeof v === "string" ? v : null)
   const n = (v: unknown) => (typeof v === "number" ? v : null)
   const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
@@ -380,6 +426,7 @@ function rowToDetail(row: Record<string, unknown>): ApplicationDetail {
     source: (row.source as ApplicationSource) ?? "self_applied",
     submittedAt: s(row.submitted_at),
     reviewedAt: s(row.reviewed_at),
+    registrationSubmitted: Boolean(row.submitted_at && s(row.corporate_address) && s(row.entity_type)),
     companyName: (row.company_name as string) ?? "Unknown",
     corporateAddress: s(row.corporate_address),
     stateOfIncorporation: s(row.state_of_incorporation),
@@ -437,9 +484,12 @@ function rowToDetail(row: Record<string, unknown>): ApplicationDetail {
 const toListItem = (a: ApplicationDetail): ApplicationListItem => ({
   id: a.id,
   companyName: a.companyName,
+  contactEmail: a.salesRepEmail,
   submittedAt: a.submittedAt,
   source: a.source,
   status: a.status,
+  awaitingRegistration: isAwaitingRegistration(a),
+  invitationToken: a.invitationToken,
   products: a.productsOffered,
   states: a.licensedStates,
 })
@@ -482,11 +532,37 @@ export async function getApplication(
   return rowToDetail(data)
 }
 
+export async function listApplicationActivity(id: string): Promise<ApplicationActivity[]> {
+  if (!isSupabaseConfigured()) return []
+
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from("application_activity_log")
+    .select("id, action, notes, admin_id, created_at")
+    .eq("application_id", id)
+    .order("created_at", { ascending: false })
+
+  const adminIds = [...new Set((data ?? []).map((r) => r.admin_id as string | null).filter((v): v is string => !!v))]
+  const names = new Map<string, string>()
+  if (adminIds.length) {
+    const { data: admins } = await supabase.from("profiles").select("id, full_name").in("id", adminIds)
+    for (const a of admins ?? []) if (a.full_name) names.set(a.id as string, a.full_name as string)
+  }
+
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    action: r.action as ApplicationActivity["action"],
+    notes: (r.notes as string | null) ?? null,
+    adminName: r.admin_id ? names.get(r.admin_id as string) ?? "GridLink admin" : null,
+    createdAt: r.created_at as string,
+  }))
+}
+
 export async function getDashboardStats(): Promise<DashboardStats> {
   if (!isSupabaseConfigured()) {
     return {
       pendingApplications: MOCK_APPLICATIONS.filter(
-        (a) => a.status === "pending_review"
+        (a) => a.status === "pending_review" && a.registrationSubmitted
       ).length,
       verifiedVendors: 1,
       activeRfps: 3,
@@ -499,7 +575,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     supabase
       .from("vendor_applications")
       .select("id", { count: "exact", head: true })
-      .eq("status", "pending_review"),
+      .eq("status", "pending_review")
+      // Mirrors registrationSubmitted: untouched invites and interest forms aren't reviewable yet.
+      .not("submitted_at", "is", null)
+      .not("corporate_address", "is", null)
+      .not("entity_type", "is", null),
     supabase
       .from("vendors")
       .select("id", { count: "exact", head: true })

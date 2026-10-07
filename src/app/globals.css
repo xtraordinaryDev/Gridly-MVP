@@ -140,6 +140,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Long unbroken strings wrap instead of overflowing their container. */
+    overflow-wrap: break-word;
   }
   html {
     @apply font-sans;

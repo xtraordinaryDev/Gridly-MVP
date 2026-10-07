@@ -15,7 +15,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
   ])
   const emergency = urgency === "emergency"
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6 lg:p-8">
       <Link href="/buyer/orders" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" />
         Back to orders

@@ -76,6 +76,7 @@ export function BuyerReviewActions({
           <StatusBadge status={status} size="lg" />
         </div>
 
+        {decided ? null : (
         <div className="mt-5">
           <label className="mb-2 block text-sm font-semibold text-navy">
             Internal notes
@@ -84,9 +85,12 @@ export function BuyerReviewActions({
             rows={3}
             placeholder="Notes for the GridLink team (not shown to the buyer)…"
             value={notes}
+            maxLength={2000}
             onChange={(e) => setNotes(e.target.value)}
           />
+          <p className="mt-1.5 text-xs text-muted-foreground">Saved with your decision.</p>
         </div>
+        )}
       </div>
 
       <div className="space-y-2.5 rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -129,14 +133,15 @@ export function BuyerReviewActions({
           <AlertDialogHeader>
             <AlertDialogTitle>Reject this request?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will mark the request as rejected and notify the buyer. This can&apos;t be
-              undone.
+              This will mark the request as rejected and email the buyer a standard notice. This
+              can&apos;t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Textarea
             rows={3}
-            placeholder="Reason (optional, internal)…"
+            placeholder="Reason (optional) — internal note, not sent to the buyer…"
             value={rejectReason}
+            maxLength={2000}
             onChange={(e) => setRejectReason(e.target.value)}
           />
           <AlertDialogFooter>

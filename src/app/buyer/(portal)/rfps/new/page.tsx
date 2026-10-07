@@ -6,9 +6,11 @@ import { listVerifiedVendors } from "@/lib/data/directory"
 import { listAddressOptions } from "@/lib/data/sites"
 import { RfpCreateWizard } from "@/components/buyer/rfp-create-wizard"
 
-export default async function CreateRfpPage() {
+export default async function CreateRfpPage({ searchParams }: { searchParams: Promise<{ vendor?: string }> }) {
   const { profile, preview } = await requireBuyer()
-  const [vendors, addresses] = await Promise.all([listVerifiedVendors(), listAddressOptions(profile.id)])
+  const [{ vendor }, vendors, addresses] = await Promise.all([searchParams, listVerifiedVendors(), listAddressOptions(profile.id)])
+  // "Invite to RFP" on a supplier profile arrives with ?vendor=<id>.
+  const preselect = vendor && vendors.some((v) => v.id === vendor) ? [vendor] : undefined
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-6 lg:p-8">
@@ -24,7 +26,7 @@ export default async function CreateRfpPage() {
         Multi-step wizard — publish to invite verified suppliers.
       </p>
       <div className="mt-8">
-        <RfpCreateWizard vendors={vendors} addresses={addresses} preview={preview} />
+        <RfpCreateWizard vendors={vendors} addresses={addresses} preview={preview} preselectVendorIds={preselect} />
       </div>
     </div>
   )

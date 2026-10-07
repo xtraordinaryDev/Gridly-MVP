@@ -1,12 +1,13 @@
 import Link from "next/link"
-import { Building2, Globe, Mail, BookmarkPlus, FileInput } from "lucide-react"
+import { Building2, Globe, Mail, FileInput } from "lucide-react"
 
 import type { VendorPublicProfile } from "@/lib/directory/profile"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { SaveSupplierButton } from "@/components/buyer/directory/save-supplier-button"
 import { GridLinkVerifiedBadge } from "./gridlink-verified-badge"
 
-export function VendorProfileHero({ profile }: { profile: VendorPublicProfile }) {
+export function VendorProfileHero({ profile, saved = false }: { profile: VendorPublicProfile; saved?: boolean }) {
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm">
       <div className="flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-start lg:justify-between">
@@ -35,17 +36,11 @@ export function VendorProfileHero({ profile }: { profile: VendorPublicProfile })
               </p>
             ) : null}
             <div className="mt-5 flex flex-wrap gap-2">
-              <Link href="/buyer/rfps/new" className={cn(buttonVariants())}>
+              <Link href={`/buyer/rfps/new?vendor=${encodeURIComponent(profile.id)}`} className={cn(buttonVariants())}>
                 <FileInput className="size-4" />
                 Invite to RFP
               </Link>
-              <Link
-                href="/buyer/saved"
-                className={cn(buttonVariants({ variant: "outline" }))}
-              >
-                <BookmarkPlus className="size-4" />
-                Save to List
-              </Link>
+              <SaveSupplierButton vendorId={profile.id} initialSaved={saved} />
               {profile.contacts[0]?.email ? (
                 <a
                   href={`mailto:${profile.contacts[0].email}`}

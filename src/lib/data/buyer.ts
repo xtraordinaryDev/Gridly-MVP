@@ -58,15 +58,16 @@ export async function getBuyerDashboardStats(): Promise<BuyerDashboardStats> {
   const supabase = await createClient()
   const vendors = await listVerifiedVendors()
 
-  const [rfps, responses] = await Promise.all([
+  const [rfps, responses, contracts] = await Promise.all([
     supabase.from("rfps").select("id, status", { count: "exact" }),
     supabase.from("rfp_responses").select("id", { count: "exact", head: true }),
+    supabase.from("contracts").select("id", { count: "exact", head: true }),
   ])
 
   const active =
     rfps.data?.filter((r) => r.status === "published").length ?? rfps.count ?? 0
-  const awarded =
-    rfps.data?.filter((r) => r.status === "awarded").length ?? 0
+  // Contracts, not RFP status: the tile links to the Contracts page and must match it.
+  const awarded = contracts.count ?? 0
 
   return {
     activeRfps: active,
@@ -124,11 +125,10 @@ export async function getBuyerRfpActivity(limit = 8): Promise<RfpActivityEvent[]
     events.push({ id: `bid-${key}`, type: "bid", label: `${g.count} new bid${g.count === 1 ? "" : "s"} on “${titleOf.get(g.rfpId) ?? "RFP"}”`, date: g.date })
   }
 
-  for (const r of rfps) {
-    if (r.status !== "awarded") continue
-    // No awarded_at column yet — the latest bid (or the deadline) is the closest timestamp we have.
-    const latestBid = (bids ?? []).find((b) => b.rfp_id === r.id)?.submitted_at as string | undefined
-    events.push({ id: `award-${r.id}`, type: "awarded", label: `Awarded “${r.title}”`, date: latestBid ?? (r.bid_due_date as string) ?? (r.published_at as string) })
+  const { data: awards } = await supabase.from("contracts").select("rfp_id, awarded_at").in("rfp_id", ids)
+  for (const a of awards ?? []) {
+    if (!a.awarded_at) continue
+    events.push({ id: `award-${a.rfp_id}`, type: "awarded", label: `Awarded “${titleOf.get(a.rfp_id as string) ?? "RFP"}”`, date: a.awarded_at as string })
   }
 
   return events.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, limit)

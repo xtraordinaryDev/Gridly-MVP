@@ -28,7 +28,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Truncate } from "@/components/admin/truncate"
 import { RfpStatusBadge } from "@/components/buyer/rfp-status-badge"
+import { formatRfpDate } from "@/lib/rfp/dates"
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -36,17 +38,10 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "published", label: "Published" },
   { value: "closed", label: "Closed" },
   { value: "awarded", label: "Awarded" },
+  { value: "cancelled", label: "Cancelled" },
 ]
 
-function formatDate(value: string | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-}
+const formatDate = (value: string | null) => formatRfpDate(value)
 
 function formatGallons(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -61,7 +56,7 @@ const columns = [
     header: "RFP",
     cell: (info) => (
       <div className="flex items-center gap-1.5">
-        <span className="font-medium text-navy">{info.getValue()}</span>
+        <Truncate className="max-w-[18rem] font-medium text-navy">{info.getValue()}</Truncate>
         {info.row.original.urgency !== "standard" ? (
           <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
             <Zap className="size-2.5" />
@@ -73,7 +68,7 @@ const columns = [
   }),
   columnHelper.accessor("buyerName", {
     header: "Buyer",
-    cell: (info) => <span className="text-foreground">{info.getValue()}</span>,
+    cell: (info) => <Truncate className="max-w-[12rem] text-foreground">{info.getValue()}</Truncate>,
   }),
   columnHelper.accessor("fuelType", {
     header: "Fuel",
@@ -96,9 +91,7 @@ const columns = [
     header: "States",
     enableSorting: false,
     cell: (info) => (
-      <span className="whitespace-nowrap text-muted-foreground">
-        {info.getValue().join(", ")}
-      </span>
+      <Truncate className="max-w-[10rem] text-muted-foreground">{info.getValue().join(", ")}</Truncate>
     ),
   }),
   columnHelper.accessor("invitedCount", {
@@ -175,9 +168,9 @@ export function AdminRfpsTable({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Select value={status} onValueChange={(v) => setStatus(v ?? "all")}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Filter by status" />
+          <Select value={status} onValueChange={(v) => setStatus(v ?? "all")} items={STATUS_FILTERS}>
+            <SelectTrigger className="w-44" aria-label="Filter by status">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {STATUS_FILTERS.map((f) => (

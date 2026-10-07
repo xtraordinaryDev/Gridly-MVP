@@ -95,8 +95,8 @@ export function ContractDetailView({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Delivered" value={`${f.deliveredGallons.toLocaleString()} gal`} hint={`of ${contract.quantityGallons.toLocaleString()}`} icon={Droplet} accent="text-brand-blue bg-brand-blue/10" />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatTile label="Delivered" value={f.deliveredGallons.toLocaleString()} hint={`gal of ${contract.quantityGallons.toLocaleString()}`} icon={Droplet} accent="text-brand-blue bg-brand-blue/10" />
         <StatTile label="Open orders" value={String(f.openOrders)} hint={`${f.orderedGallons.toLocaleString()} gal ordered`} icon={Truck} accent="text-navy bg-navy/10" />
         <StatTile label="On-time deliveries" value={f.onTimePct == null ? "—" : `${f.onTimePct}%`} icon={Truck} accent={f.onTimePct != null && f.onTimePct < 90 ? "text-amber-700 bg-amber-100" : "text-emerald bg-emerald/15"} />
         <StatTile label="Invoiced" value={money(contract.invoicedTotal)} hint={`${money(contract.paidTotal)} paid · ${f.unbilledGallons.toLocaleString()} gal unbilled`} icon={Receipt} accent="text-emerald bg-emerald/15" />

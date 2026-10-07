@@ -1,59 +1,61 @@
 "use client"
 
-import { useRef, useState, useTransition } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Upload } from "lucide-react"
 
-import { createClient } from "@/lib/supabase/client"
 import type { DocumentType } from "@/lib/data/documents"
-import { saveUploadedDocument } from "./actions"
+import { putSignedUpload } from "@/lib/storage/client"
+import { checkUpload } from "@/lib/storage/paths"
+import { createDocumentUpload, saveUploadedDocument } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
-const MAX_MB = 10
-
-function sanitize(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_")
-}
-
 export function DocumentUploader({
-  vendorId,
   type,
+  label,
   hasExpiry,
+  expiryRequired,
+  currentExpiry,
   replace,
   preview,
 }: {
-  vendorId: string
   type: DocumentType
+  label: string
   hasExpiry?: boolean
+  expiryRequired?: boolean
+  /** Expiry on file (YYYY-MM-DD); pre-filled so a replace doesn't drop it unnoticed. */
+  currentExpiry?: string | null
   replace: boolean
   preview: boolean
 }) {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [expiresAt, setExpiresAt] = useState("")
+  const [expiresAt, setExpiresAt] = useState(currentExpiry ?? "")
   const [busy, setBusy] = useState(false)
-  const [isPending, startTransition] = useTransition()
+
+  function pickFile() {
+    if (expiryRequired && !expiresAt) return toast.error(`Enter the expiry date for your ${label} first.`)
+    inputRef.current?.click()
+  }
 
   async function handleFile(file: File) {
-    if (file.size > MAX_MB * 1024 * 1024) return toast.error(`Files must be under ${MAX_MB} MB.`)
+    const check = checkUpload("document", file)
+    if (!check.ok) return toast.error(check.message)
     setBusy(true)
     try {
-      const path = `vendors/${vendorId}/${type}/${Date.now()}-${sanitize(file.name)}`
+      let path = `vendors/preview/${type}/${file.name}`
       if (!preview) {
-        const supabase = createClient()
-        const { error } = await supabase.storage.from("vendor-documents").upload(path, file, { upsert: true, contentType: file.type || undefined })
-        if (error) throw new Error(error.message)
+        const ticket = await createDocumentUpload(type, { name: file.name, size: file.size, type: file.type }, expiresAt)
+        if (!ticket.ok) throw new Error(ticket.message)
+        await putSignedUpload(ticket, file)
+        path = ticket.path
       }
-      startTransition(async () => {
-        const res = await saveUploadedDocument({ type, path, fileName: file.name, expiresAt })
-        if (res.ok) {
-          toast.success(replace ? "Document replaced" : "Document uploaded")
-          setExpiresAt("")
-          router.refresh()
-        } else toast.error(res.message)
-      })
+      const res = await saveUploadedDocument({ type, path, fileName: file.name, ...(hasExpiry ? { expiresAt } : {}) })
+      if (!res.ok) throw new Error(res.message)
+      toast.success(replace ? "Document replaced" : "Document uploaded")
+      router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed")
     } finally {
@@ -61,13 +63,12 @@ export function DocumentUploader({
     }
   }
 
-  const working = busy || isPending
   return (
     <div className="flex flex-wrap items-center gap-2">
       {hasExpiry ? (
         <label className="text-xs text-muted-foreground">
-          Expires
-          <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="ml-2 inline-block h-8 w-36 align-middle" />
+          Expires{expiryRequired ? <span className="text-destructive"> *</span> : null}
+          <Input type="date" required={expiryRequired} value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="ml-2 inline-block h-8 w-36 align-middle" />
         </label>
       ) : null}
       <input
@@ -81,8 +82,8 @@ export function DocumentUploader({
           e.currentTarget.value = ""
         }}
       />
-      <Button type="button" variant={replace ? "ghost" : "outline"} size="sm" className="gap-1.5" disabled={working} onClick={() => inputRef.current?.click()}>
-        {working ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+      <Button type="button" variant={replace ? "ghost" : "outline"} size="sm" className="gap-1.5" disabled={busy} onClick={pickFile}>
+        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
         {replace ? "Replace" : "Upload"}
       </Button>
     </div>

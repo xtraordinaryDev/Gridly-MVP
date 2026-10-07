@@ -4,17 +4,12 @@ import { useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { FileText, Loader2, Paperclip, Trash2, Upload } from "lucide-react"
 
-import { createClient } from "@/lib/supabase/client"
 import type { Attachment } from "@/lib/schemas/rfp-wizard"
-import { getAttachmentUrl } from "@/app/attachments/actions"
+import { createBidAttachmentUpload, createDeliveryDocUpload, createRfpAttachmentUpload, getAttachmentUrl } from "@/app/attachments/actions"
+import { putSignedUpload } from "@/lib/storage/client"
+import { checkUpload, sanitizeFileName } from "@/lib/storage/paths"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-
-const MAX_MB = 15
-
-function sanitize(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_")
-}
 
 export function formatBytes(bytes: number) {
   if (!bytes) return "0 B"
@@ -23,16 +18,32 @@ export function formatBytes(bytes: number) {
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-/** Uploads straight from the browser to the private rfp-attachments bucket. */
+/**
+ * Uploads an RFP attachment (`rfps/…` prefix) or a bid attachment
+ * (`bids/{rfp id}`). The server authorises the upload and picks the real
+ * storage path; the prefix only says which kind this is.
+ */
 export async function uploadAttachment(file: File, prefix: string, preview: boolean): Promise<Attachment> {
-  if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Files must be under ${MAX_MB} MB.`)
-  const path = `${prefix}/${Date.now()}-${sanitize(file.name)}`
-  if (!preview) {
-    const supabase = createClient()
-    const { error } = await supabase.storage.from("rfp-attachments").upload(path, file, { upsert: false, contentType: file.type || undefined })
-    if (error) throw new Error(error.message)
-  }
-  return { name: file.name, path, size: file.size }
+  const check = checkUpload("attachment", file)
+  if (!check.ok) throw new Error(check.message)
+  if (preview) return { name: file.name, path: `${prefix}/${Date.now()}-${sanitizeFileName(file.name)}`, size: file.size }
+  const info = { name: file.name, size: file.size, type: file.type }
+  const [kind, id] = prefix.split("/")
+  const ticket = kind === "bids" ? await createBidAttachmentUpload(id ?? "", info) : await createRfpAttachmentUpload(info)
+  if (!ticket.ok) throw new Error(ticket.message)
+  await putSignedUpload(ticket, file)
+  return { name: file.name, path: ticket.path, size: file.size }
+}
+
+/** Uploads a BOL / delivery ticket for a contract the signed-in vendor is party to. */
+export async function uploadDeliveryDoc(file: File, contractId: string, preview: boolean): Promise<{ name: string; path: string }> {
+  const check = checkUpload("bol", file)
+  if (!check.ok) throw new Error(check.message)
+  if (preview) return { name: file.name, path: `deliveries/${contractId}/${Date.now()}-${sanitizeFileName(file.name)}` }
+  const ticket = await createDeliveryDocUpload(contractId, { name: file.name, size: file.size, type: file.type })
+  if (!ticket.ok) throw new Error(ticket.message)
+  await putSignedUpload(ticket, file)
+  return { name: file.name, path: ticket.path }
 }
 
 /** Multi-file attachment list with add/remove, for the RFP wizard. */
@@ -84,13 +95,14 @@ export function AttachmentsField({
           e.currentTarget.value = ""
           if (!files.length) return
           setBusy(true)
+          const added: Attachment[] = []
           try {
-            const added: Attachment[] = []
             for (const f of files) added.push(await uploadAttachment(f, prefix, preview))
-            onChange([...value, ...added])
           } catch (err) {
             toast.error(err instanceof Error ? err.message : "Upload failed")
           } finally {
+            // Keep the files that did upload when a later one is rejected.
+            if (added.length) onChange([...value, ...added])
             setBusy(false)
           }
         }}

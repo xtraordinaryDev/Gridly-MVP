@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarClock, FileWarning, ShieldCheck } from "lucide-r
 import { requireAdmin } from "@/lib/auth"
 import { listComplianceIssues } from "@/lib/data/documents"
 import { StatTile } from "@/components/invoicing/charts"
+import { Truncate } from "@/components/admin/truncate"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -52,13 +53,13 @@ export default async function AdminCompliancePage() {
               <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground"><ShieldCheck className="mx-auto mb-2 size-5 text-emerald" />Every verified supplier is current.</TableCell></TableRow>
             ) : issues.map((i) => (
               <TableRow key={`${i.vendorId}-${i.type}`}>
-                <TableCell><Link href={`/admin/vendors`} className="font-medium text-navy hover:underline">{i.vendorName}</Link></TableCell>
+                <TableCell><Link href={`/admin/vendors/${i.vendorId}`} className="font-medium text-navy hover:underline"><Truncate>{i.vendorName}</Truncate></Link></TableCell>
                 <TableCell>{i.label}</TableCell>
                 <TableCell>
                   {i.kind === "expired" ? <Badge className="bg-red-100 text-red-800">Expired</Badge> : i.kind === "expiring" ? <Badge className="bg-amber-100 text-amber-800">Expires in {i.daysLeft}d</Badge> : <Badge className="bg-navy/10 text-navy">Missing</Badge>}
                 </TableCell>
                 <TableCell className="text-muted-foreground">{fmt(i.expiresAt)}</TableCell>
-                <TableCell className="text-muted-foreground">{i.fileName ?? "—"}</TableCell>
+                <TableCell className="text-muted-foreground"><Truncate>{i.fileName}</Truncate></TableCell>
               </TableRow>
             ))}
           </TableBody>

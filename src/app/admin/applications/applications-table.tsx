@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   createColumnHelper,
@@ -10,14 +10,17 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table"
-import { ArrowUpDown, ChevronRight } from "lucide-react"
+import { ArrowUpDown, Check, ChevronRight, Copy, Search } from "lucide-react"
+import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
 import type {
   ApplicationListItem,
   ApplicationStatus,
 } from "@/lib/data/applications"
-import { buttonVariants } from "@/components/ui/button"
+import { Truncate } from "@/components/admin/truncate"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -38,6 +41,7 @@ import { StatusBadge, SourceBadge } from "@/components/admin/status-badge"
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "all", label: "All statuses" },
   { value: "pending_review", label: "Pending Review" },
+  { value: "awaiting_registration", label: "Awaiting registration" },
   { value: "info_requested", label: "Info Requested" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
@@ -75,13 +79,46 @@ function TagList({ items }: { items: string[] }) {
   )
 }
 
+function CopyRegistrationLink({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(t)
+  }, [copied])
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="gap-1 text-muted-foreground"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(url)
+          setCopied(true)
+        } catch {
+          toast.error("Couldn't copy — open the application to copy the link.")
+        }
+      }}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      {copied ? "Copied" : "Copy registration link"}
+    </Button>
+  )
+}
+
 const columnHelper = createColumnHelper<ApplicationListItem>()
 
-const columns = [
+const buildColumns = (registrationBase: string) => [
   columnHelper.accessor("companyName", {
     header: "Company",
     cell: (info) => (
-      <span className="font-medium text-navy">{info.getValue()}</span>
+      <div className="min-w-0">
+        <Truncate className="font-medium text-navy">{info.getValue()}</Truncate>
+        {info.row.original.contactEmail ? (
+          <Truncate className="text-xs text-muted-foreground">{info.row.original.contactEmail}</Truncate>
+        ) : null}
+      </div>
     ),
   }),
   columnHelper.accessor("submittedAt", {
@@ -110,19 +147,30 @@ const columns = [
   columnHelper.accessor("status", {
     header: "Status",
     enableSorting: false,
-    cell: (info) => <StatusBadge status={info.getValue()} />,
+    cell: (info) => (
+      <StatusBadge
+        status={info.getValue()}
+        awaitingRegistration={info.row.original.awaitingRegistration}
+        className="whitespace-nowrap"
+      />
+    ),
   }),
   columnHelper.display({
     id: "action",
     header: "",
     cell: (info) => (
-      <Link
-        href={`/admin/applications/${info.row.original.id}`}
-        className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}
-      >
-        View
-        <ChevronRight className="size-3.5" />
-      </Link>
+      <div className="flex items-center justify-end gap-1">
+        {info.row.original.awaitingRegistration ? (
+          <CopyRegistrationLink url={`${registrationBase}/${info.row.original.invitationToken}`} />
+        ) : null}
+        <Link
+          href={`/admin/applications/${info.row.original.id}`}
+          className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}
+        >
+          View
+          <ChevronRight className="size-3.5" />
+        </Link>
+      </div>
     ),
   }),
 ]
@@ -130,26 +178,36 @@ const columns = [
 export function ApplicationsTable({
   data,
   initialStatus = "all",
+  registrationBase,
 }: {
   data: ApplicationListItem[]
   initialStatus?: string
+  /** `${site}/vendor-registration` — the token is appended for "Copy registration link". */
+  registrationBase: string
 }) {
   const [status, setStatus] = useState<string>(
     STATUS_FILTERS.some((f) => f.value === initialStatus)
       ? initialStatus
       : "all"
   )
+  const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([
     { id: "submittedAt", desc: true },
   ])
+  const columns = useMemo(() => buildColumns(registrationBase), [registrationBase])
 
-  const filtered = useMemo(
-    () =>
-      status === "all"
-        ? data
-        : data.filter((d) => d.status === (status as ApplicationStatus)),
-    [data, status]
-  )
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return data.filter((d) => {
+      // "Pending Review" means reviewable: invites and interest forms still owed a registration have their own filter.
+      if (status === "awaiting_registration" ? !d.awaitingRegistration : status !== "all" && (d.status !== (status as ApplicationStatus) || d.awaitingRegistration)) return false
+      if (q) {
+        const haystack = [d.companyName, d.contactEmail ?? "", ...d.states, ...d.products].join(" ").toLowerCase()
+        if (!q.split(/\s+/).every((word) => haystack.includes(word))) return false
+      }
+      return true
+    })
+  }, [data, status, search])
 
   const table = useReactTable({
     data: filtered,
@@ -166,18 +224,30 @@ export function ApplicationsTable({
         <p className="text-sm text-muted-foreground">
           {filtered.length} application{filtered.length === 1 ? "" : "s"}
         </p>
-        <Select value={status} onValueChange={(v) => setStatus(v ?? "all")}>
-          <SelectTrigger className="w-52">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_FILTERS.map((f) => (
-              <SelectItem key={f.value} value={f.value}>
-                {f.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search company, email, state, product…"
+              aria-label="Search applications"
+              className="w-72 max-w-full pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Select value={status} onValueChange={(v) => setStatus(v ?? "all")} items={STATUS_FILTERS}>
+            <SelectTrigger className="w-52" aria-label="Filter by status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">

@@ -70,8 +70,11 @@ export function CreateAccountForm({
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <Input type="password" placeholder="At least 8 characters" {...field} />
+                <Input type="password" placeholder="At least 10 characters" autoComplete="new-password" maxLength={72} {...field} />
               </FormControl>
+              <p className="text-xs text-muted-foreground">
+                Minimum 10 characters. A short phrase you&apos;ll remember works well.
+              </p>
               <FormMessage />
             </FormItem>
           )}
@@ -83,7 +86,7 @@ export function CreateAccountForm({
             <FormItem>
               <FormLabel>Confirm password</FormLabel>
               <FormControl>
-                <Input type="password" placeholder="Re-enter your password" {...field} />
+                <Input type="password" placeholder="Re-enter your password" autoComplete="new-password" maxLength={72} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>

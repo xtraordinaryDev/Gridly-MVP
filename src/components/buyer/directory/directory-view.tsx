@@ -6,7 +6,6 @@ import { Grid3x3, List, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   DEFAULT_DIRECTORY_FILTERS,
-  DIRECTORY_TOTAL_VERIFIED,
   filterDirectory,
   type DirectoryFilters,
   type DirectorySort,
@@ -107,8 +106,8 @@ export function DirectoryView({ vendors }: { vendors: DirectoryVendor[] }) {
           <p className="flex items-start gap-2 text-sm text-navy">
             <Sparkles className="mt-0.5 size-4 shrink-0 text-brand-blue" />
             <span>
-              <span className="font-medium">Try searching:</span> &ldquo;verified diesel
-              suppliers in Minnesota with wet-hose capability and DBE certification.&rdquo;
+              <span className="font-medium">Tip:</span> search by company name, state or product
+              (&ldquo;Minnesota&rdquo;, &ldquo;diesel&rdquo;), then narrow with the filters.
             </span>
           </p>
         </div>
@@ -117,12 +116,13 @@ export function DirectoryView({ vendors }: { vendors: DirectoryVendor[] }) {
           <p className="text-sm text-muted-foreground">
             Showing{" "}
             <span className="font-semibold text-navy">{filtered.length}</span> of{" "}
-            <span className="font-semibold text-navy">{DIRECTORY_TOTAL_VERIFIED}</span>{" "}
+            <span className="font-semibold text-navy">{vendors.length}</span>{" "}
             verified suppliers
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={filters.sort}
+              items={SORT_OPTIONS}
               onValueChange={(v) =>
                 updateFilters({ ...filters, sort: (v ?? "relevance") as DirectorySort })
               }
@@ -201,7 +201,7 @@ export function DirectoryView({ vendors }: { vendors: DirectoryVendor[] }) {
               variant="outline"
               size="sm"
               disabled={safePage <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => { setPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0 }) }}
             >
               Previous
             </Button>
@@ -213,7 +213,7 @@ export function DirectoryView({ vendors }: { vendors: DirectoryVendor[] }) {
               variant="outline"
               size="sm"
               disabled={safePage >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0 }) }}
             >
               Next
             </Button>

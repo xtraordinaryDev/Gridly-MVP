@@ -1,6 +1,5 @@
 import "server-only"
 
-import { format } from "date-fns"
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
@@ -35,7 +34,8 @@ function lastMonths(n: number) {
   const d = new Date()
   for (let i = n - 1; i >= 0; i--) {
     const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1))
-    out.push({ month: m.toISOString().slice(0, 7), label: format(m, "MMM") })
+    // UTC label for a UTC month start (a local-time format slips a month west of UTC).
+    out.push({ month: m.toISOString().slice(0, 7), label: m.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) })
   }
   return out
 }

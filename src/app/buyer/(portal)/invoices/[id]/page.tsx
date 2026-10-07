@@ -13,5 +13,5 @@ export default async function BuyerInvoiceDetailPage({ params }: { params: Promi
   if (!invoice || invoice.status === "draft") notFound()
   const messages = await listThread({ role: "buyer", id: profile.id }, "invoice", id)
 
-  return <InvoiceDetailView invoice={invoice} role="buyer" backHref="/buyer/invoices" backLabel="Back to invoices" extra={<MessageThread threadType="invoice" threadId={id} messages={messages} role="buyer" title="Discuss this invoice" description="Questions about a charge, a ticket mismatch, or when payment is coming." />} />
+  return <div className="p-4 sm:p-6 lg:p-8"><InvoiceDetailView invoice={invoice} role="buyer" backHref="/buyer/invoices" backLabel="Back to invoices" extra={<MessageThread threadType="invoice" threadId={id} messages={messages} role="buyer" title="Discuss this invoice" description="Questions about a charge, a ticket mismatch, or when payment is coming." />} /></div>
 }

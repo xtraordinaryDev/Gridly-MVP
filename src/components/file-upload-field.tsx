@@ -5,12 +5,12 @@ import { useController, useFormContext, type FieldValues, type Path } from "reac
 import { FileUp, FileText, Loader2, RefreshCw, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
 import type { DocumentRef } from "@/lib/schemas/vendor-application"
+import { createRegistrationUpload, removeRegistrationUpload } from "@/app/vendor-registration/[token]/actions"
+import { putSignedUpload } from "@/lib/storage/client"
+import { UPLOAD_RULES, checkUpload, sanitizeFileName } from "@/lib/storage/paths"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-
-const BUCKET = "vendor-documents"
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B"
@@ -19,41 +19,39 @@ function formatBytes(bytes: number) {
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-function sanitizeFileName(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_")
-}
-
 export interface FileUploadFieldProps<TForm extends FieldValues> {
   /** RHF field name (must resolve to a DocumentRef | undefined). */
   name: Path<TForm>
   label: string
-  /** Owning application id — used to namespace the storage path. */
-  applicationId: string
-  /** Document type segment for the storage path, e.g. "w9" or "coi". */
-  documentType: string
+  /** Invitation token — what authorises the upload server-side. */
+  token: string
+  /** Which onboarding slot this file fills; the server puts it under that folder. */
+  documentType: "w9" | "coi" | "distributor_license" | "logo"
+  /** No backend configured: keep the file reference local and skip storage. */
+  preview?: boolean
   accept?: string
   required?: boolean
   description?: string
-  maxSizeMb?: number
 }
 
 export function FileUploadField<TForm extends FieldValues>({
   name,
   label,
-  applicationId,
+  token,
   documentType,
+  preview = false,
   accept = ".pdf,.png,.jpg,.jpeg",
   required = false,
   description,
-  maxSizeMb = 10,
 }: FileUploadFieldProps<TForm>) {
-  const { control } = useFormContext<TForm>()
+  const { control, clearErrors } = useFormContext<TForm>()
   const {
     field,
     fieldState: { error },
   } = useController({ name, control })
 
   const value = field.value as DocumentRef | undefined
+  const kind = documentType === "logo" ? "logo" : "document"
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -62,12 +60,11 @@ export function FileUploadField<TForm extends FieldValues>({
   async function handleFile(file: File) {
     setLocalError(null)
 
-    if (file.size > maxSizeMb * 1024 * 1024) {
-      setLocalError(`File must be under ${maxSizeMb} MB.`)
+    const check = checkUpload(kind, file)
+    if (!check.ok) {
+      setLocalError(check.message)
       return
     }
-
-    const path = `${applicationId}/${documentType}/${sanitizeFileName(file.name)}`
 
     setUploading(true)
     setProgress(8)
@@ -77,21 +74,25 @@ export function FileUploadField<TForm extends FieldValues>({
     }, 200)
 
     try {
-      const supabase = createClient()
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, { upsert: true, contentType: file.type })
-
-      if (uploadError) throw uploadError
+      let path = `preview/${documentType}/${sanitizeFileName(file.name)}`
+      if (!preview) {
+        const ticket = await createRegistrationUpload(token, documentType, { name: file.name, size: file.size, type: file.type })
+        if (!ticket.ok) throw new Error(ticket.message)
+        await putSignedUpload(ticket, file)
+        path = ticket.path
+      }
 
       setProgress(100)
+      const previous = value?.path
       field.onChange({ path, name: file.name, size: file.size } satisfies DocumentRef)
+      // A "please upload…" error from an earlier Continue is now stale.
+      clearErrors(name)
+      if (previous && previous !== path && !preview) void removeRegistrationUpload(token, previous)
     } catch (err) {
       console.error("Upload failed:", err)
       setLocalError(
         err instanceof Error ? err.message : "Upload failed. Please try again."
       )
-      field.onChange(undefined)
     } finally {
       clearInterval(timer)
       setUploading(false)
@@ -100,19 +101,21 @@ export function FileUploadField<TForm extends FieldValues>({
 
   async function handleRemove() {
     const current = value
+    setLocalError(null)
     field.onChange(undefined)
     setProgress(0)
-    if (current?.path) {
+    if (current?.path && !preview) {
       try {
-        const supabase = createClient()
-        await supabase.storage.from(BUCKET).remove([current.path])
+        await removeRegistrationUpload(token, current.path)
       } catch (err) {
         console.error("Failed to remove file from storage:", err)
       }
     }
   }
 
-  const showError = error?.message || localError
+  // A rejected pick (wrong type, too large) explains itself better than the schema's "required".
+  const showError = localError || error?.message
+  const maxSizeMb = UPLOAD_RULES[kind].maxMb
 
   return (
     <div className="space-y-2">

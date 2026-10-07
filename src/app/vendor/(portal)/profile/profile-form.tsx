@@ -50,7 +50,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { updateVendorProfile, requestFieldChange } from "./actions"
-import { ProfileSchema, type ProfileValues } from "./schema"
+import { ProfileSchema, isHttpUrl, type ProfileValues } from "./schema"
 
 function Section({
   title,
@@ -235,7 +235,7 @@ function PublicProfilePreview({ vendor }: { vendor: VendorProfile }) {
             Website
           </dt>
           <dd className="mt-0.5 truncate text-sm font-medium text-foreground">
-            {vendor.website ? (
+            {vendor.website && isHttpUrl(vendor.website) ? (
               <a
                 href={vendor.website}
                 target="_blank"
@@ -245,7 +245,7 @@ function PublicProfilePreview({ vendor }: { vendor: VendorProfile }) {
                 {vendor.website}
               </a>
             ) : (
-              "—"
+              vendor.website || "—"
             )}
           </dd>
         </div>
@@ -362,7 +362,7 @@ export function ProfileForm({
         <PublicProfilePreview vendor={vendor} />
       ) : (
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form noValidate onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <Section title="Company Information">
               <div className="mb-5 space-y-2">
                 <LockedField
@@ -395,7 +395,7 @@ export function ProfileForm({
                     <FormItem>
                       <FormLabel>Website</FormLabel>
                       <FormControl>
-                        <Input placeholder="https://…" {...field} />
+                        <Input type="url" inputMode="url" placeholder="https://…" maxLength={200} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -607,6 +607,7 @@ export function ProfileForm({
           <Textarea
             rows={4}
             placeholder={`What should "${changeField}" be updated to, and why?`}
+            maxLength={2000}
             value={changeMessage}
             onChange={(e) => setChangeMessage(e.target.value)}
           />
@@ -617,7 +618,7 @@ export function ProfileForm({
             <Button
               type="button"
               onClick={submitChangeRequest}
-              disabled={isPending || !changeMessage.trim()}
+              disabled={isPending || changeMessage.trim().length < 5}
               className="gap-2"
             >
               {isPending ? <Loader2 className="size-4 animate-spin" /> : null}

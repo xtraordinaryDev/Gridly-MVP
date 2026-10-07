@@ -57,7 +57,7 @@ export const PaymentSchema = z.object({
   amount: z.number({ error: "Enter an amount" }).positive("Amount must be greater than zero"),
   method: z.enum(PAYMENT_METHODS),
   reference: optionalText,
-  paidAt: z.string().min(1, "Payment date is required"),
+  paidAt: z.string().min(1, "Payment date is required").refine((v) => v.slice(0, 10) <= new Date(Date.now() + 86400000).toISOString().slice(0, 10), "The payment date can't be in the future"),
   note: optionalText,
 })
 

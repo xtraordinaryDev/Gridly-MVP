@@ -7,7 +7,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   const code = url.searchParams.get("code")
   const next = url.searchParams.get("next") ?? "/login"
-  const safeNext = next.startsWith("/") ? next : "/login"
+  // Local paths only. "//host" and "/\host" both resolve to another origin,
+  // and control characters get stripped by URL parsers, so refuse all three.
+  const local = /^\/(?![/\\])[^\\\u0000-\u001f]*$/.test(next) && new URL(next, url.origin).origin === url.origin
+  const safeNext = local ? next : "/login"
 
   const tokenHash = url.searchParams.get("token_hash")
   const type = url.searchParams.get("type") as "recovery" | "magiclink" | "email" | "signup" | "invite" | null

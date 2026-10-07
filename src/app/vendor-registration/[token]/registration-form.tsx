@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   useForm,
+  useFormState,
   type Control,
   type FieldPath,
 } from "react-hook-form"
@@ -27,6 +28,7 @@ import {
   US_STATES,
 } from "@/lib/schemas/vendor-application"
 import { submitVendorRegistration } from "./actions"
+import { normalizeRegistration } from "./normalize"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -201,14 +203,24 @@ function buildDefaults(
     licensedStates: [],
   } as unknown as VendorRegistration
 
-  return { ...base, ...cleanInitial(initial) }
+  return { ...base, ...normalizeRegistration(initial) }
 }
 
-function cleanInitial(initial?: Partial<VendorRegistration>) {
-  if (!initial) return {}
-  return Object.fromEntries(
-    Object.entries(initial).filter(([, v]) => v !== undefined && v !== null)
-  )
+/**
+ * Error text for a list field. The schema reports an unknown item at
+ * `field.0`, not on the field itself, so a plain FormMessage shows nothing.
+ */
+function ListMessage({ control, name }: { control: Ctrl; name: Name }) {
+  const { errors } = useFormState({ control, name })
+  const error = errors[name as keyof typeof errors] as
+    | { message?: string; root?: { message?: string } }
+    | ({ message?: string } | undefined)[]
+    | undefined
+  if (!error) return null
+  const message = Array.isArray(error)
+    ? error.find((e) => e?.message)?.message
+    : error.message ?? error.root?.message
+  return message ? <p className="text-sm text-destructive">{message}</p> : null
 }
 
 // --------------------------------------------------------------------------
@@ -282,7 +294,9 @@ function NumberField({
           <FormControl>
             <Input
               type="number"
+              inputMode="numeric"
               min={0}
+              step={1}
               placeholder={placeholder}
               name={field.name}
               ref={field.ref}
@@ -452,10 +466,46 @@ function ChipsField({
                 />
               ))}
             </div>
-            <FormMessage />
+            <ListMessage control={control} name={name} />
           </FormItem>
         )
       }}
+    />
+  )
+}
+
+/** Pick exactly one — for fields the schema types as a single enum value. */
+function ChoiceChipsField({
+  control,
+  name,
+  label,
+  options,
+}: {
+  control: Ctrl
+  name: Name
+  label: string
+  options: readonly string[]
+}) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={label}>
+            {options.map((opt) => (
+              <Chip
+                key={opt}
+                label={opt}
+                active={field.value === opt}
+                onClick={() => field.onChange(opt)}
+              />
+            ))}
+          </div>
+          <FormMessage />
+        </FormItem>
+      )}
     />
   )
 }
@@ -498,7 +548,7 @@ function CheckboxGroupField({
                 )
               })}
             </div>
-            <FormMessage />
+            <ListMessage control={control} name={name} />
           </FormItem>
         )
       }}
@@ -551,21 +601,26 @@ function SectionGrid({ children }: { children: React.ReactNode }) {
 // --------------------------------------------------------------------------
 export function RegistrationForm({
   token,
-  applicationId,
   previewMode,
   initialData,
+  returning = false,
 }: {
   token: string
-  applicationId: string
   previewMode: boolean
   initialData?: Partial<VendorRegistration>
+  /** A full profile is already on file, so every step is open from the start. */
+  returning?: boolean
 }) {
   const router = useRouter()
+  const lastStep = STEPS.length - 1
   const [step, setStep] = useState(0)
-  const [maxVisited, setMaxVisited] = useState(0)
+  const [maxVisited, setMaxVisited] = useState(returning ? lastStep : 0)
   const [isPending, startTransition] = useTransition()
   const storageKey = `gridlink:vendor-registration:${token}`
+  const stepKey = `${storageKey}:step`
   const hydrated = useRef(false)
+  const submitting = useRef(false)
+  const reachedReviewAt = useRef(0)
 
   const form = useForm<VendorRegistration>({
     resolver: zodResolver(VendorRegistrationSchema),
@@ -578,8 +633,16 @@ export function RegistrationForm({
     try {
       const saved = localStorage.getItem(storageKey)
       if (saved) {
-        const parsed = JSON.parse(saved)
+        // Drafts can predate a field changing shape; normalise before loading.
+        const parsed = normalizeRegistration(JSON.parse(saved))
         form.reset(buildDefaults({ ...initialData, ...parsed }))
+      }
+      const place = JSON.parse(localStorage.getItem(stepKey) ?? "null") as { step?: number; maxVisited?: number } | null
+      const clamp = (n: unknown) => (typeof n === "number" && Number.isInteger(n) ? Math.min(Math.max(n, 0), lastStep) : 0)
+      if (place) {
+        const reached = Math.max(clamp(place.maxVisited), returning ? lastStep : 0)
+        setMaxVisited(reached)
+        setStep(Math.min(clamp(place.step), reached))
       }
     } catch {
       // ignore malformed drafts
@@ -587,6 +650,16 @@ export function RegistrationForm({
     hydrated.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Remember where they were, so a reload doesn't send them back to step 1.
+  useEffect(() => {
+    if (!hydrated.current) return
+    try {
+      localStorage.setItem(stepKey, JSON.stringify({ step, maxVisited }))
+    } catch {
+      // non-fatal
+    }
+  }, [step, maxVisited, stepKey])
 
   // Persist draft on every change.
   useEffect(() => {
@@ -609,6 +682,7 @@ export function RegistrationForm({
     const valid = await form.trigger(current.fields)
     if (!valid) return
     const next = Math.min(step + 1, totalSteps - 1)
+    if (next === lastStep) reachedReviewAt.current = Date.now()
     setStep(next)
     setMaxVisited((m) => Math.max(m, next))
     window.scrollTo({ top: 0, behavior: "smooth" })
@@ -620,6 +694,8 @@ export function RegistrationForm({
   }
 
   function goToStep(target: number) {
+    // Review re-lays-out under the pointer; swallow the tail of a double click on Continue.
+    if (Date.now() - reachedReviewAt.current < 700) return
     if (target <= maxVisited) {
       setStep(target)
       window.scrollTo({ top: 0, behavior: "smooth" })
@@ -627,26 +703,49 @@ export function RegistrationForm({
   }
 
   function onSubmit(values: VendorRegistration) {
+    // A double click must not send the application (and its emails) twice.
+    if (submitting.current) return
+    submitting.current = true
     startTransition(async () => {
-      const result = await submitVendorRegistration(token, values)
-      if (result.ok) {
-        try {
-          localStorage.removeItem(storageKey)
-        } catch {
-          // ignore
+      try {
+        const result = await submitVendorRegistration(token, values)
+        if (result.ok) {
+          try {
+            localStorage.removeItem(storageKey)
+            localStorage.removeItem(stepKey)
+          } catch {
+            // ignore
+          }
+          router.push("/vendor-registration/submitted")
+          return // stay locked while the confirmation page loads
         }
-        router.push("/vendor-registration/submitted")
-      } else {
         toast.error(result.message)
+      } catch {
+        toast.error("We couldn't submit your profile. Please try again.")
       }
+      submitting.current = false
     })
   }
+
+  // Submitting validates every step; take them to the first one that needs a fix.
+  function onInvalid(errors: Record<string, unknown>) {
+    const target = STEPS.findIndex((s) => s.fields.some((f) => f in errors))
+    if (target >= 0) {
+      setStep(target)
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    }
+    toast.error(target >= 0 ? `Please fix the highlighted fields in ${STEPS[target].title}.` : "Some fields need attention.")
+  }
+
+  // Keep focus where it is on mouse-down: otherwise the field being left
+  // re-validates on blur, its error line shifts the button, and the click misses.
+  const keepFocus = (e: React.MouseEvent) => e.preventDefault()
 
   const control = form.control
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
+      <form onSubmit={(e) => e.preventDefault()} noValidate>
         {/* Progress header */}
         <div className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
@@ -793,30 +892,34 @@ export function RegistrationForm({
                 <FileUploadField<VendorRegistration>
                   name="w9Form"
                   label="W-9 form"
-                  applicationId={applicationId}
+                  token={token}
+                  preview={previewMode}
                   documentType="w9"
                   required
                 />
                 <FileUploadField<VendorRegistration>
                   name="certificateOfInsurance"
                   label="Certificate of insurance"
-                  applicationId={applicationId}
+                  token={token}
+                  preview={previewMode}
                   documentType="coi"
                   required
                 />
                 <FileUploadField<VendorRegistration>
                   name="distributorLicense"
                   label="Distributor license"
-                  applicationId={applicationId}
+                  token={token}
+                  preview={previewMode}
                   documentType="distributor_license"
                   description="Optional, but speeds up verification."
                 />
                 <FileUploadField<VendorRegistration>
                   name="companyLogo"
                   label="Company logo"
-                  applicationId={applicationId}
+                  token={token}
+                  preview={previewMode}
                   documentType="logo"
-                  accept=".png,.jpg,.jpeg,.svg"
+                  accept=".png,.jpg,.jpeg"
                   description="Shown on your Verified Directory profile."
                 />
               </div>
@@ -948,7 +1051,7 @@ export function RegistrationForm({
                     Emergency services
                   </h4>
                   <div className="mt-4 space-y-5">
-                    <ChipsField
+                    <ChoiceChipsField
                       control={control}
                       name="emergencyRetainerWilling"
                       label="Willing to hold an emergency retainer?"
@@ -1006,15 +1109,7 @@ export function RegistrationForm({
                     />
                   </div>
                 ))}
-                <FormField
-                  control={control}
-                  name="productsOffered"
-                  render={() => (
-                    <FormItem>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <ListMessage control={control} name="productsOffered" />
                 <TextField
                   control={control}
                   name="brandsOffered"
@@ -1112,7 +1207,7 @@ export function RegistrationForm({
                           />
                         ))}
                       </div>
-                      <FormMessage />
+                      <ListMessage control={control} name="licensedStates" />
                     </FormItem>
                   )
                 }}
@@ -1131,6 +1226,7 @@ export function RegistrationForm({
             type="button"
             variant="outline"
             size="lg"
+            onMouseDown={keepFocus}
             onClick={goBack}
             disabled={step === 0}
             className="gap-2"
@@ -1139,13 +1235,27 @@ export function RegistrationForm({
             Back
           </Button>
 
+          {/* Distinct keys: without them React reuses the Continue button's DOM
+              node for Submit, and the click that reached Review also submits. */}
           {step < totalSteps - 1 ? (
-            <Button type="button" size="lg" onClick={goNext} className="gap-2">
+            <Button key="continue" type="button" size="lg" onMouseDown={keepFocus} onClick={goNext} className="gap-2">
               Continue
               <ArrowRight className="size-4" />
             </Button>
           ) : (
-            <Button type="submit" size="lg" disabled={isPending} className="gap-2">
+            <Button
+              key="submit"
+              type="button"
+              size="lg"
+              disabled={isPending}
+              onMouseDown={keepFocus}
+              onClick={() => {
+                // The second half of a double click on Continue lands here; ignore it.
+                if (Date.now() - reachedReviewAt.current < 700) return
+                void form.handleSubmit(onSubmit, onInvalid)()
+              }}
+              className="gap-2"
+            >
               {isPending ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
@@ -1160,7 +1270,6 @@ export function RegistrationForm({
             </Button>
           )}
         </div>
-        {previewMode ? null : null}
       </form>
     </Form>
   )

@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { AlertTriangle, Building2, Zap } from "lucide-react"
+import { GridLinkLogo } from "@/components/brand/logo"
+import { AlertTriangle, Building2, CheckCircle2 } from "lucide-react"
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { accountExists } from "@/lib/forms/public-form"
 import { buttonVariants } from "@/components/ui/button"
 import { CreateAccountForm } from "./create-account-form"
 
@@ -15,7 +17,9 @@ export const metadata: Metadata = {
 type LoadResult =
   | { state: "ok" | "preview"; email: string; companyName: string }
   | { state: "invalid" }
+  | { state: "rejected" }
   | { state: "not_approved" }
+  | { state: "used" }
 
 async function load(token: string): Promise<LoadResult> {
   if (!isSupabaseConfigured()) {
@@ -34,7 +38,11 @@ async function load(token: string): Promise<LoadResult> {
     .maybeSingle()
 
   if (!data) return { state: "invalid" }
+  if (data.status === "rejected") return { state: "rejected" }
   if (data.status !== "approved") return { state: "not_approved" }
+
+  // The link works once: after the account exists it only points at sign-in.
+  if (data.email && (await accountExists(supabase, data.email as string))) return { state: "used" }
 
   return {
     state: "ok",
@@ -48,12 +56,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <main className="flex min-h-screen flex-1 items-center justify-center bg-accent/30 px-4 py-16">
       <div className="w-full max-w-md">
         <Link href="/" className="mb-6 flex items-center justify-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-navy text-navy-foreground">
-            <Zap className="size-4 fill-brand-blue text-brand-blue" />
-          </span>
-          <span className="text-lg font-bold tracking-tight text-navy">
-            Grid<span className="text-brand-blue">Link</span>
-          </span>
+          <GridLinkLogo />
         </Link>
         {children}
       </div>
@@ -69,21 +72,52 @@ export default async function CreateBuyerAccountPage({
   const { token } = await params
   const result = await load(token)
 
-  if (result.state === "invalid" || result.state === "not_approved") {
+  if (result.state === "used") {
+    return (
+      <Shell>
+        <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-emerald/15 text-emerald">
+            <CheckCircle2 className="size-6" />
+          </div>
+          <h1 className="text-xl font-bold text-navy">This account has already been created</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This link has already been used to set up your account. Sign in to continue, or reset
+            your password if you&apos;ve forgotten it.
+          </p>
+          <Link href="/login" className={`${buttonVariants()} mt-6 w-full`}>
+            Sign in
+          </Link>
+          <Link href="/forgot-password" className="mt-3 block text-sm font-medium text-brand-blue hover:underline">
+            Forgot your password?
+          </Link>
+        </div>
+      </Shell>
+    )
+  }
+
+  if (result.state === "invalid" || result.state === "not_approved" || result.state === "rejected") {
+    const copy = {
+      invalid: {
+        title: "Invalid link",
+        body: "This account-creation link is invalid or has expired. Please use the link from your approval email.",
+      },
+      not_approved: {
+        title: "Not approved yet",
+        body: "This request is still under review. You'll receive an email with an account link once it's approved.",
+      },
+      rejected: {
+        title: "This request was not approved",
+        body: "We reviewed this request and weren't able to approve it, so an account can't be created from this link. If you think that's a mistake, reply to the email we sent you.",
+      },
+    }[result.state]
     return (
       <Shell>
         <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
             <AlertTriangle className="size-6" />
           </div>
-          <h1 className="text-xl font-bold text-navy">
-            {result.state === "not_approved" ? "Not approved yet" : "Invalid link"}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {result.state === "not_approved"
-              ? "This request is still under review. You'll receive an email with an account link once it's approved."
-              : "This account-creation link is invalid or has expired. Please use the link from your approval email."}
-          </p>
+          <h1 className="text-xl font-bold text-navy">{copy.title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.body}</p>
           <Link href="/" className={`${buttonVariants({ variant: "outline" })} mt-6`}>
             Back to GridLink
           </Link>

@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { format } from "date-fns"
 
 import type { BuyerRfpDetail } from "@/lib/rfp/types"
 import { RfpStatusBadge } from "@/components/buyer/rfp-status-badge"
@@ -24,11 +23,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { formatRfpDate } from "@/lib/rfp/dates"
 
-function formatDt(iso: string | null) {
-  if (!iso) return "—"
-  return format(new Date(iso), "MMM d, yyyy")
-}
+const formatDt = (value: string | null) => formatRfpDate(value)
 
 const INVITE_STATUS: Record<string, string> = {
   invited: "bg-muted text-muted-foreground",
@@ -102,7 +99,7 @@ export function RfpDetailView({
         </CardContent>
       </Card>
 
-      <Tabs defaultValue={defaultTab}>
+      <Tabs key={defaultTab} defaultValue={defaultTab}>
         <TabsList variant="line" className="h-auto w-full flex-wrap justify-start border-b bg-transparent p-0">
           {["overview", "invited", "responses", "qa", "activity"].map((tab) => (
             <TabsTrigger

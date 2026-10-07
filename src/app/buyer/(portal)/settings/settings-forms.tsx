@@ -107,7 +107,8 @@ export function SitesManager({ sites }: { sites: BuyerSite[] }) {
                   size="sm"
                   className="gap-1 text-muted-foreground"
                   disabled={isPending}
-                  onClick={() =>
+                  onClick={() => {
+                    if (!window.confirm(`Remove "${s.name}" from your saved sites?`)) return
                     startTransition(async () => {
                       const res = await removeSite(s.id)
                       if (res.ok) {
@@ -115,7 +116,7 @@ export function SitesManager({ sites }: { sites: BuyerSite[] }) {
                         router.refresh()
                       } else toast.error(res.message)
                     })
-                  }
+                  }}
                 >
                   <Trash2 className="size-3.5" />
                   Remove

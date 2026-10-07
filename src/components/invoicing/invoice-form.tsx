@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { useFieldArray, useForm } from "react-hook-form"
+import { useFieldArray, useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { Loader2, Plus, Save, Send, Trash2 } from "lucide-react"
@@ -119,13 +119,17 @@ export function InvoiceForm({
   })
 
   const lines = useFieldArray({ control: form.control, name: "lineItems" })
-  const watched = form.watch()
+  // useWatch re-renders on every field change; form.watch() alone hands back
+  // the same lineItems array, which left the totals stale.
+  const watched = useWatch({ control: form.control }) as InvoiceFormValues
   const contract = contracts.find((c) => c.id === watched.contractId)
+  // Once the user picks a due date themselves, stop deriving it from net terms.
+  const dueEdited = useRef(false)
 
   // When the contract changes on a new invoice, refresh due date + default $/gal.
   useEffect(() => {
     if (initial || !contract) return
-    form.setValue("dueDate", addDays(form.getValues("issueDate") || todayISO(), contract.netDays))
+    if (!dueEdited.current) form.setValue("dueDate", addDays(form.getValues("issueDate") || todayISO(), contract.netDays))
     const items = form.getValues("lineItems")
     items.forEach((l, i) => {
       if (l.kind === "fuel" && !l.pricePerGallon) form.setValue(`lineItems.${i}.pricePerGallon`, contract.pricePerGallon)
@@ -152,7 +156,8 @@ export function InvoiceForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(watched.lineItems?.map((l) => [l.kind, l.gallons, l.pricePerGallon, l.indexPrice])), contract?.pricingMode, contract?.differential])
 
-  const totals = useMemo(() => computeTotals(watched.lineItems ?? []), [watched.lineItems])
+  // Not memoised: react-hook-form mutates lineItems in place.
+  const totals = computeTotals(watched.lineItems ?? [])
 
   function addLine(kind: "fuel" | "fee" | "tax" | "credit") {
     lines.append({
@@ -241,7 +246,7 @@ export function InvoiceForm({
                     items={contracts.map((c) => ({ value: c.id, label: `${c.title} — ${c.buyerName}` }))}
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full *:data-[slot=select-value]:block *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate">
                         <SelectValue placeholder="Select a contract" />
                       </SelectTrigger>
                     </FormControl>
@@ -270,7 +275,17 @@ export function InvoiceForm({
                 <FormItem>
                   <FormLabel>Issue date</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} />
+                    <Input
+                      type="date"
+                      {...field}
+                      onChange={(e) => {
+                        field.onChange(e)
+                        const netDays = contract?.netDays ?? initial?.contract.netDays
+                        if (e.target.value && netDays != null && !dueEdited.current) {
+                          form.setValue("dueDate", addDays(e.target.value, netDays), { shouldDirty: true, shouldValidate: form.formState.isSubmitted })
+                        }
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -283,8 +298,9 @@ export function InvoiceForm({
                 <FormItem>
                   <FormLabel>Due date</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} />
+                    <Input type="date" {...field} onChange={(e) => { dueEdited.current = true; field.onChange(e) }} />
                   </FormControl>
+                  {contract ? <p className="text-xs text-muted-foreground">Net {contract.netDays} from the issue date unless you change it.</p> : null}
                   <FormMessage />
                 </FormItem>
               )}
@@ -531,7 +547,7 @@ export function InvoiceForm({
         </Card>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
+          <Card className="min-w-0 lg:col-span-2">
             <CardContent className="p-6">
               <FormField
                 control={form.control}

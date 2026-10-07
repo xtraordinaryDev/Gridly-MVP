@@ -41,7 +41,7 @@ export function StatTile({
 }) {
   const card = (
     <Card className={cn(href && "transition-all hover:-translate-y-0.5 hover:shadow-md")}>
-      <CardContent className="p-5">
+      <CardContent className="p-4 sm:p-5">
         <span className={cn("flex size-10 items-center justify-center rounded-xl", accent)}>
           <Icon className="size-5" />
         </span>
@@ -111,13 +111,17 @@ export function RankedBars({
   items,
   color = SERIES.invoiced,
   empty = "No data yet.",
+  format = money,
 }: {
   title: string
   items: NamedAmount[]
   color?: string
   empty?: string
+  /** How to print each amount. Defaults to dollars; pass e.g. formatTons for emissions. */
+  format?: (amount: number) => string
 }) {
-  const max = Math.max(...items.map((i) => i.amount), 1)
+  // Floor of 1 suits dollars but would flatten sub-unit values (e.g. 0.4 t).
+  const max = Math.max(...items.map((i) => i.amount)) || 1
   return (
     <Card>
       <CardContent className="p-6">
@@ -127,10 +131,10 @@ export function RankedBars({
         ) : (
           <ul className="mt-4 space-y-3">
             {items.map((it) => (
-              <li key={it.name} title={`${it.name}: ${money(it.amount)}`}>
+              <li key={it.name} title={`${it.name}: ${format(it.amount)}`}>
                 <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="truncate">{it.name}</span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">{money(it.amount)}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{format(it.amount)}</span>
                 </div>
                 <div className="mt-1 h-2 w-full rounded-full bg-muted">
                   <div className="h-2 rounded-full" style={{ width: `${(it.amount / max) * 100}%`, backgroundColor: color }} />

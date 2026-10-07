@@ -1,8 +1,7 @@
 import "server-only"
 
-import { format } from "date-fns"
-
-import { sendEmail, siteUrl } from "@/lib/email"
+import { isEmailConfigured, sendEmail, siteUrl } from "@/lib/email"
+import { formatRfpDate } from "@/lib/rfp/dates"
 
 export async function sendRfpInvitationEmails(params: {
   rfpId: string
@@ -19,7 +18,7 @@ export async function sendRfpInvitationEmails(params: {
   }[]
 }) {
   const base = siteUrl()
-  const dueLabel = format(new Date(params.bidDueDate), "MMMM d, yyyy")
+  const dueLabel = formatRfpDate(params.bidDueDate)
   const states = params.deliveryStates.join(", ") || "—"
 
   await Promise.all(
@@ -88,11 +87,17 @@ export async function sendBidSubmittedEmail(params: {
   buyerEmail: string
   rfpTitle: string
   vendorName: string
+  /** The supplier revised a bid they had already submitted. */
+  updated?: boolean
+  /** The supplier pulled their bid. */
+  withdrawn?: boolean
 }) {
+  const verb = params.withdrawn ? "withdrew their bid" : params.updated ? "updated their bid" : "submitted a bid"
+  const label = params.withdrawn ? "Bid withdrawn" : params.updated ? "Bid updated" : "New bid"
   // Buyer notification — plain Resend for MVP (no dedicated template in Phase 7 spec).
   if (!process.env.RESEND_API_KEY) {
     console.info(
-      `[GridLink email] New bid → ${params.buyerEmail}: ${params.vendorName} on "${params.rfpTitle}"`
+      `[GridLink email] ${label} → ${params.buyerEmail}: ${params.vendorName} on "${params.rfpTitle}"`
     )
     return
   }
@@ -102,8 +107,8 @@ export async function sendBidSubmittedEmail(params: {
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL?.trim() ?? "GridLink <onboarding@resend.dev>",
     to: params.buyerEmail,
-    subject: `New bid on ${params.rfpTitle}`,
-    text: `${params.vendorName} submitted a bid on "${params.rfpTitle}". Sign in to GridLink to review responses.`,
+    subject: `${label} on ${params.rfpTitle}`,
+    text: `${params.vendorName} ${verb} on "${params.rfpTitle}". Sign in to GridLink to review responses.`,
   })
 }
 
@@ -163,4 +168,59 @@ export async function sendDailyOpportunityDigest(params: {
       opportunities: params.opportunities,
     },
   })
+}
+
+/**
+ * Ops notification: a vendor asked for a locked (verification-tied) profile
+ * field to be changed. Plain text to the GridLink operator address.
+ */
+export async function sendProfileChangeRequestEmail(params: {
+  vendorId: string
+  companyName: string
+  requestedBy: string | null
+  requesterEmail: string | null
+  field: string
+  message: string
+}): Promise<{ status: "sent" | "preview" | "no-recipient" | "failed" }> {
+  const to = process.env.GRIDLINK_NOTIFY_EMAIL?.trim()
+  if (!to) return { status: "no-recipient" }
+
+  const subject = `Profile change request: ${params.companyName} — ${params.field}`
+  const text = [
+    `${params.companyName} asked for a locked profile field to be changed.`,
+    "",
+    `Field:        ${params.field}`,
+    `Requested by: ${params.requestedBy ?? "—"}${params.requesterEmail ? ` <${params.requesterEmail}>` : ""}`,
+    `Vendor ID:    ${params.vendorId}`,
+    "",
+    "Request:",
+    params.message,
+    "",
+    `Admin: ${siteUrl()}/admin`,
+  ].join("\n")
+
+  if (!isEmailConfigured()) {
+    console.info(`[GridLink email preview] ${JSON.stringify({ to: [to], subject, template: "profile-change-request" })}`)
+    return { status: "preview" }
+  }
+
+  try {
+    const { Resend } = await import("resend")
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const { error } = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL?.trim() ?? "GridLink <onboarding@resend.dev>",
+      to,
+      subject,
+      text,
+      ...(params.requesterEmail ? { replyTo: params.requesterEmail } : {}),
+    })
+    if (error) {
+      console.error("[GridLink email]", error)
+      return { status: "failed" }
+    }
+    return { status: "sent" }
+  } catch (err) {
+    console.error("[GridLink email]", err)
+    return { status: "failed" }
+  }
 }

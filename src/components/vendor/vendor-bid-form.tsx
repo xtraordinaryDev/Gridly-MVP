@@ -1,10 +1,14 @@
 "use client"
 
 import { useEffect, useRef, useState, useTransition } from "react"
-import { useForm } from "react-hook-form"
+import { useRouter } from "next/navigation"
+import { useForm, type FieldErrors, type Resolver } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
-import { FileText, Loader2, Send, Upload } from "lucide-react"
+import { FileText, Loader2, Save, Send, Upload } from "lucide-react"
+
+import type { RfpResponseView } from "@/lib/rfp/types"
+import { money } from "@/lib/invoicing/types"
 
 import { RfpBidSchema, type RfpBidInput, type PricingMode } from "@/lib/schemas/rfp-wizard"
 import { submitBid } from "@/app/vendor/(portal)/opportunities/actions"
@@ -36,6 +40,30 @@ function numberInput(field: { value: number | undefined | null; onChange: (v: nu
   )
 }
 
+// The shared schema's built-in checks surface Zod's own wording ("Too small:
+// expected number to be >=0"). Swap those for something a person would say.
+const FRIENDLY: Partial<Record<keyof RfpBidInput, string>> = {
+  pricePerGallon: "Enter a price per gallon greater than zero",
+  differential: "Enter your differential as a number (it can be negative)",
+  referenceIndexPrice: "Enter today's index price, greater than zero",
+  totalPrice: "Enter a price so the total can be calculated",
+  validityDays: "Enter a whole number of days, 1 or more",
+  deliveryTerms: "Delivery terms are required",
+}
+const RAW_ZOD = /^(Too small|Too big|Invalid input|Invalid)/
+
+const bidResolver: Resolver<RfpBidInput> = async (values, context, options) => {
+  const result = await zodResolver(RfpBidSchema)(values, context, options)
+  const errors = result.errors as FieldErrors<RfpBidInput>
+  for (const key of Object.keys(errors) as (keyof RfpBidInput)[]) {
+    const err = errors[key]
+    if (err && FRIENDLY[key] && (!err.message || RAW_ZOD.test(String(err.message)))) err.message = FRIENDLY[key]
+  }
+  return result
+}
+
+const round = (n: number, places: number) => Math.round(n * 10 ** places) / 10 ** places
+
 export function VendorBidForm({
   rfpId,
   quantityGallons,
@@ -43,6 +71,9 @@ export function VendorBidForm({
   indexName,
   preview = false,
   disabled,
+  initial,
+  onDone,
+  onCancel,
 }: {
   rfpId: string
   quantityGallons: number
@@ -50,25 +81,34 @@ export function VendorBidForm({
   indexName: string | null
   preview?: boolean
   disabled?: boolean
+  /** Existing bid to edit; submitting replaces it */
+  initial?: RfpResponseView | null
+  onDone?: () => void
+  onCancel?: () => void
 }) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Index bids store the effective $/gal, so the reference price they were
+  // quoted against is that minus the differential.
+  const initialRef = initial && pricingMode === "index" ? round(initial.pricePerGallon - (initial.differential ?? 0), 4) : undefined
+
   const form = useForm<RfpBidInput>({
-    resolver: zodResolver(RfpBidSchema),
+    resolver: bidResolver,
     defaultValues: {
       pricingMode,
-      pricePerGallon: undefined,
-      indexName: indexName ?? "",
-      differential: undefined,
-      referenceIndexPrice: undefined,
+      pricePerGallon: initial && pricingMode === "fixed" ? initial.pricePerGallon : undefined,
+      indexName: (pricingMode === "index" && initial?.indexName) || indexName || "",
+      differential: initial && pricingMode === "index" ? initial.differential ?? undefined : undefined,
+      referenceIndexPrice: initialRef && initialRef > 0 ? initialRef : undefined,
       totalPrice: 0,
-      deliveryTerms: "",
-      validityDays: 30,
-      notes: "",
-      attachmentName: "",
-      attachmentPath: "",
+      deliveryTerms: initial?.deliveryTerms ?? "",
+      validityDays: initial?.validityDays || 30,
+      notes: initial?.notes ?? "",
+      attachmentName: initial?.attachmentName ?? "",
+      attachmentPath: initial?.attachmentPath ?? "",
     },
   })
 
@@ -77,24 +117,33 @@ export function VendorBidForm({
   const ref = form.watch("referenceIndexPrice")
   const attachmentName = form.watch("attachmentName")
 
-  useEffect(() => {
-    const effective = pricingMode === "index" ? (ref ?? 0) + (diff ?? 0) : ppg ?? 0
-    if (effective > 0 && quantityGallons > 0) {
-      form.setValue("totalPrice", Math.round(effective * quantityGallons * 100) / 100)
-    }
-  }, [ppg, diff, ref, quantityGallons, pricingMode, form])
-
   const effectivePpg = pricingMode === "index" ? (ref ?? 0) + (diff ?? 0) : ppg ?? 0
+  // The total is always $/gal × the RFP quantity; the server recomputes it too.
+  const computedTotal = effectivePpg > 0 && quantityGallons > 0 ? round(effectivePpg * quantityGallons, 2) : 0
+  const totalEditable = quantityGallons <= 0
+
+  useEffect(() => {
+    if (totalEditable) return
+    form.setValue("totalPrice", computedTotal)
+    if (computedTotal > 0) form.clearErrors("totalPrice")
+  }, [computedTotal, totalEditable, form])
 
   return (
     <Form {...form}>
       <form
+        noValidate
         className="space-y-4"
         onSubmit={form.handleSubmit((values) => {
           startTransition(async () => {
-            const res = await submitBid(rfpId, values)
-            if (res.ok) toast.success("Bid submitted")
-            else toast.error(res.message)
+            const res = await submitBid(rfpId, totalEditable ? values : { ...values, totalPrice: computedTotal })
+            if (res.ok) {
+              toast.success(initial ? "Bid updated" : "Bid submitted")
+              // Same transition, so the summary only reappears with the saved values.
+              startTransition(() => {
+                router.refresh()
+                onDone?.()
+              })
+            } else toast.error(res.message)
           })
         })}
       >
@@ -159,20 +208,31 @@ export function VendorBidForm({
               />
             </>
           )}
-          <FormField
-            control={form.control}
-            name="totalPrice"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{pricingMode === "index" ? "Estimated total ($)" : "Total price ($)"}</FormLabel>
-                <FormControl>{numberInput({ ...field, onChange: (v) => field.onChange(v ?? 0) }, "0.01", { disabled, min: 0 })}</FormControl>
-                {pricingMode === "index" && effectivePpg > 0 ? (
-                  <p className="text-xs text-muted-foreground">≈ ${effectivePpg.toFixed(4)}/gal at today&apos;s index × {quantityGallons.toLocaleString()} gal</p>
-                ) : null}
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {totalEditable ? (
+            <FormField
+              control={form.control}
+              name="totalPrice"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{pricingMode === "index" ? "Estimated total ($)" : "Total price ($)"}</FormLabel>
+                  <FormControl>{numberInput({ ...field, onChange: (v) => field.onChange(v ?? 0) }, "0.01", { disabled, min: 0 })}</FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : (
+            <div className="grid content-start gap-2">
+              <p className="flex items-center text-sm leading-none font-medium">{pricingMode === "index" ? "Estimated total" : "Total price"}</p>
+              <output aria-label={pricingMode === "index" ? "Estimated total" : "Total price"} className="flex h-9 items-center rounded-md border border-border bg-muted/50 px-3 text-sm font-semibold tabular-nums text-navy">
+                {computedTotal > 0 ? money(computedTotal) : "—"}
+              </output>
+              <p className="text-xs text-muted-foreground">
+                {computedTotal > 0
+                  ? `${pricingMode === "index" ? "≈ " : ""}$${effectivePpg.toFixed(4)}/gal × ${quantityGallons.toLocaleString()} gal`
+                  : `Calculated from your price × ${quantityGallons.toLocaleString()} gal`}
+              </p>
+            </div>
+          )}
         </div>
         <FormField
           control={form.control}
@@ -205,8 +265,9 @@ export function VendorBidForm({
             <FormItem>
               <FormLabel>Notes</FormLabel>
               <FormControl>
-                <Textarea rows={2} disabled={disabled} {...field} />
+                <Textarea rows={2} maxLength={4000} disabled={disabled} {...field} />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />
@@ -248,10 +309,17 @@ export function VendorBidForm({
           <p className="text-xs text-muted-foreground">Price sheet, COI, or supporting documents. Up to 15 MB.</p>
         </FormItem>
 
-        <Button type="submit" size="lg" disabled={disabled || isPending || uploading} className="gap-2">
-          {isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          Submit bid
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="lg" disabled={disabled || isPending || uploading} className="gap-2">
+            {isPending ? <Loader2 className="size-4 animate-spin" /> : initial ? <Save className="size-4" /> : <Send className="size-4" />}
+            {initial ? "Save changes" : "Submit bid"}
+          </Button>
+          {onCancel ? (
+            <Button type="button" size="lg" variant="outline" disabled={isPending} onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : null}
+        </div>
       </form>
     </Form>
   )

@@ -31,11 +31,11 @@ export function ResetPasswordForm() {
     >
       <label className="block text-sm font-medium">
         New password
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" className="mt-1" required minLength={8} />
+        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 10 characters" autoComplete="new-password" className="mt-1" required minLength={10} maxLength={72} />
       </label>
       <label className="block text-sm font-medium">
         Confirm password
-        <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter your password" className="mt-1" required />
+        <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter your password" autoComplete="new-password" className="mt-1" required maxLength={72} />
       </label>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" size="lg" disabled={isPending} className="w-full gap-2">

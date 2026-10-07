@@ -98,7 +98,7 @@ export default async function AdminDashboardPage() {
         {kpis.map((kpi) => (
           <Link key={kpi.label} href={kpi.href} className="group">
             <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <div className="flex items-start justify-between">
                   <span
                     className={`flex size-10 items-center justify-center rounded-xl ${kpi.accent}`}
@@ -117,7 +117,7 @@ export default async function AdminDashboardPage() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-navy">Invoicing across the network</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatTile label="Invoiced" value={moneyCompact(inv.invoicedTotal)} title={money(inv.invoicedTotal)} hint={`${inv.invoiceCount} invoices`} icon={Receipt} accent="text-brand-blue bg-brand-blue/10" />
           <StatTile label="Collected" value={moneyCompact(inv.paidTotal)} title={money(inv.paidTotal)} icon={CircleDollarSign} accent="text-emerald bg-emerald/15" />
           <StatTile label="Outstanding" value={moneyCompact(inv.outstanding)} title={money(inv.outstanding)} icon={Hourglass} accent="text-navy bg-navy/10" />
@@ -131,15 +131,15 @@ export default async function AdminDashboardPage() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-navy">Emissions across the network ({em.year} YTD)</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatTile label="CO2e from fuel invoiced" value={formatTons(em.tonsYtd)} hint={`${em.gallonsYtd.toLocaleString("en-US")} gal`} icon={Leaf} accent="text-emerald bg-emerald/15" />
           <StatTile label="Carbon intensity" value={em.intensityKgPerGal == null ? "—" : `${em.intensityKgPerGal.toFixed(2)} kg/gal`} icon={Leaf} accent="text-navy bg-navy/10" />
           <StatTile label="Renewable share" value={`${em.renewableSharePct}%`} icon={Sprout} accent="text-emerald bg-emerald/15" />
           <StatTile label="Avoided vs diesel" value={formatTons(em.avoidedTonsYtd)} icon={Sprout} accent="text-brand-blue bg-brand-blue/10" />
         </div>
         <div className="grid gap-6 lg:grid-cols-2">
-          <RankedBars title="Emissions by fuel type" items={em.byFuel} color="#10B981" />
-          <RankedBars title="Emissions by buyer" items={em.byParty} color="#10B981" />
+          <RankedBars title="Emissions by fuel type" items={em.byFuel} color="#10B981" format={formatTons} />
+          <RankedBars title="Emissions by buyer" items={em.byParty} color="#10B981" format={formatTons} />
         </div>
       </section>
 
@@ -175,7 +175,7 @@ export default async function AdminDashboardPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <SourceBadge source={app.source} />
-                  <StatusBadge status={app.status} />
+                  <StatusBadge status={app.status} awaitingRegistration={app.awaitingRegistration} />
                 </div>
               </Link>
             ))}

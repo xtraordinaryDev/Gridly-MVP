@@ -182,13 +182,15 @@ export function VendorProfileTabs({ profile }: { profile: VendorPublicProfile })
             <p className="text-sm">{profile.areasSubcontracted}</p>
           </Section>
         </div>
-        <Section title="Terminals">
-          <ul className="list-inside list-disc space-y-1 text-sm">
-            {profile.terminals.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
-        </Section>
+        {profile.terminals.length ? (
+          <Section title="Terminals">
+            <ul className="list-inside list-disc space-y-1 text-sm">
+              {profile.terminals.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          </Section>
+        ) : null}
       </TabsContent>
 
       <TabsContent value="capabilities" className="mt-6">
@@ -284,6 +286,11 @@ export function VendorProfileTabs({ profile }: { profile: VendorPublicProfile })
       </TabsContent>
 
       <TabsContent value="contacts" className="mt-6">
+        {profile.contacts.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
+            This supplier hasn&apos;t published contact details. Invite them to an RFP and use its Q&amp;A tab to reach them.
+          </p>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           {profile.contacts.map((c) => (
             <div

@@ -83,7 +83,7 @@ export default async function BuyerDashboardPage() {
       label: "Awarded contracts",
       value: stats.awardedContracts,
       icon: Award,
-      href: "/buyer/rfps",
+      href: "/buyer/contracts",
       accent: "text-amber-600 bg-amber-100",
     },
   ]
@@ -122,11 +122,11 @@ export default async function BuyerDashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {kpis.map((kpi) => (
           <Link key={kpi.label} href={kpi.href}>
             <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <span
                   className={`flex size-10 items-center justify-center rounded-xl ${kpi.accent}`}
                 >
@@ -149,7 +149,7 @@ export default async function BuyerDashboardPage() {
             View invoices
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatTile label="Outstanding" value={moneyCompact(inv.outstanding)} title={money(inv.outstanding)} icon={Hourglass} accent="text-brand-blue bg-brand-blue/10" href="/buyer/invoices" />
           <StatTile label="Due this week" value={moneyCompact(inv.dueThisWeek)} title={money(inv.dueThisWeek)} hint={`${inv.dueThisWeekCount}`} icon={CalendarClock} accent="text-amber-700 bg-amber-100" href="/buyer/invoices" />
           <StatTile label="Overdue" value={moneyCompact(inv.overdue)} title={money(inv.overdue)} hint={`${inv.overdueCount}`} icon={AlertTriangle} accent={inv.overdue > 0 ? "text-red-700 bg-red-100" : "text-muted-foreground bg-muted"} href="/buyer/invoices" />
@@ -168,7 +168,7 @@ export default async function BuyerDashboardPage() {
           <h2 className="text-lg font-semibold text-navy">Emissions</h2>
           <p className="text-sm text-muted-foreground">Scope 1 CO2e from fuel invoiced to you, {em.year} year to date.</p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatTile label="CO2e year to date" value={formatTons(em.tonsYtd)} hint={em.tonsPriorYtd != null ? `${formatTons(em.tonsPriorYtd)} last year` : `${em.gallonsYtd.toLocaleString("en-US")} gal`} icon={Leaf} accent="text-emerald bg-emerald/15" />
           <StatTile label="Carbon intensity" value={em.intensityKgPerGal == null ? "—" : `${em.intensityKgPerGal.toFixed(2)} kg/gal`} hint="diesel is 10.21" icon={Leaf} accent="text-navy bg-navy/10" />
           <StatTile label="Renewable share" value={`${em.renewableSharePct}%`} hint="of gallons" icon={Sprout} accent="text-emerald bg-emerald/15" />
@@ -179,8 +179,8 @@ export default async function BuyerDashboardPage() {
             <EmissionsTargetDialog year={em.year} current={em.target?.targetTons ?? null} note={em.target?.note ?? null} tonsYtd={em.tonsYtd} />
           </TargetProgress>
           <SingleBars title="Emissions by month" unit="t CO2e" color="#10B981" series={em.monthly.map((m) => ({ label: m.label, value: m.tons }))} />
-          <RankedBars title="Emissions by fuel type" items={em.byFuel} color="#10B981" empty="No fuel invoiced yet." />
-          <RankedBars title="Emissions by supplier" items={em.byParty} color="#10B981" empty="No fuel invoiced yet." />
+          <RankedBars title="Emissions by fuel type" items={em.byFuel} color="#10B981" empty="No fuel invoiced yet." format={formatTons} />
+          <RankedBars title="Emissions by supplier" items={em.byParty} color="#10B981" empty="No fuel invoiced yet." format={formatTons} />
         </div>
         <p className="text-xs text-muted-foreground">Factors: {EMISSION_FACTOR_SOURCE}.</p>
       </section>

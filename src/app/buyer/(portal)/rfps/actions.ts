@@ -64,6 +64,12 @@ export async function awardContract(
 ): Promise<ActionResult> {
   const { profile } = await requireBuyer()
   const result = await awardRfpContract(profile.id, rfpId, vendorId)
+  if (result.ok) {
+    revalidate(rfpId)
+    revalidatePath("/buyer/contracts")
+    revalidatePath("/vendor/contracts")
+    revalidatePath("/vendor/dashboard")
+  }
   return result
 }
 

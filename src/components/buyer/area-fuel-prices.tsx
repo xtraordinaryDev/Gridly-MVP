@@ -107,7 +107,7 @@ export function AreaFuelPrices({ data }: { data: AreaFuelPriceSummary }) {
           <h2 className="text-lg font-semibold text-navy">Fuel prices near your sites</h2>
           <p className="text-sm text-muted-foreground">Weekly retail averages for your areas, and posted prices at the stations closest to each site.</p>
         </div>
-        <Link href="/buyer/settings" className="text-sm font-medium text-brand-blue hover:underline">
+        <Link href="/buyer/settings" className="shrink-0 whitespace-nowrap text-sm font-medium text-brand-blue hover:underline">
           Manage sites
         </Link>
       </div>

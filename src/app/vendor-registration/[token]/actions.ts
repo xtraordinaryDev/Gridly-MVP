@@ -7,12 +7,59 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { sendEmail } from "@/lib/email"
+import { fileExtension, isApplicationDocumentPath, UPLOAD_RULES } from "@/lib/storage/paths"
+import { issueUploadTicket, parseFileInfo, type UploadTicketResult } from "@/lib/storage/uploads"
 
 export type SubmitRegistrationResult =
   | { ok: true }
   | { ok: false; message: string }
 
 const VALID_STATUSES = ["pending_review", "info_requested"]
+const BUCKET = "vendor-documents"
+const UPLOAD_SLOTS = ["w9", "coi", "distributor_license", "logo"] as const
+
+/** The open application behind an invitation token — the only credential an applicant has. */
+async function openApplication(token: unknown): Promise<{ id: string; documents: Record<string, { path?: string } | null> } | null> {
+  if (typeof token !== "string" || token.length < 16 || token.length > 200) return null
+  const { data } = await createAdminClient().from("vendor_applications").select("id, status, documents").eq("invitation_token", token).maybeSingle()
+  if (!data || !VALID_STATUSES.includes(data.status as string)) return null
+  return { id: data.id as string, documents: (data.documents as Record<string, { path?: string } | null> | null) ?? {} }
+}
+
+/** Authorises one onboarding upload into applications/{application id}/{slot}/. */
+export async function createRegistrationUpload(token: unknown, slot: unknown, file: unknown): Promise<UploadTicketResult> {
+  const info = parseFileInfo(file)
+  if (!info || !UPLOAD_SLOTS.includes(slot as (typeof UPLOAD_SLOTS)[number]) || !isSupabaseConfigured()) return { ok: false, message: "Invalid upload." }
+  const application = await openApplication(token)
+  if (!application) return { ok: false, message: "This registration link is no longer valid." }
+  return issueUploadTicket(slot === "logo" ? "logo" : "document", `applications/${application.id}/${slot as string}`, info)
+}
+
+/** Deletes a file the applicant uploaded and then removed, unless the saved application still points at it. */
+export async function removeRegistrationUpload(token: unknown, path: unknown): Promise<void> {
+  if (!isSupabaseConfigured()) return
+  const application = await openApplication(token)
+  if (!application || !isApplicationDocumentPath(path, application.id)) return
+  if (Object.values(application.documents).some((d) => d?.path === path)) return
+  await createAdminClient().storage.from(BUCKET).remove([path])
+}
+
+function documentProblem(applicationId: string, data: VendorRegistration): string | null {
+  const slots: [string, { path: string; name: string } | undefined, string[]][] = [
+    ["W-9", data.w9Form, UPLOAD_RULES.document.extensions],
+    ["certificate of insurance", data.certificateOfInsurance, UPLOAD_RULES.document.extensions],
+    ["distributor license", data.distributorLicense, UPLOAD_RULES.document.extensions],
+    ["company logo", data.companyLogo, UPLOAD_RULES.logo.extensions],
+  ]
+  for (const [label, doc, extensions] of slots) {
+    if (!doc) continue
+    // The path comes back from the browser: it must be inside this application's own folder.
+    if (!isApplicationDocumentPath(doc.path, applicationId) || !extensions.includes(fileExtension(doc.path))) {
+      return `Please upload your ${label} again.`
+    }
+  }
+  return null
+}
 
 function toColumns(data: VendorRegistration) {
   return {
@@ -122,6 +169,9 @@ export async function submitVendorRegistration(
         message: "This application has already been submitted.",
       }
     }
+
+    const problem = documentProblem(application.id as string, parsed.data)
+    if (problem) return { ok: false, message: problem }
 
     const { error: updateError } = await supabase
       .from("vendor_applications")

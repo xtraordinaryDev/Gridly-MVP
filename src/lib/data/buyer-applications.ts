@@ -18,6 +18,9 @@ export interface BuyerApplicationDetail {
   industry: string | null
   estimatedVolume: string | null
   useCase: string | null
+  /** Admin's note from the approve/reject decision (column added in migration 0018). */
+  reviewNotes: string | null
+  reviewedByName: string | null
 }
 
 export interface BuyerApplicationListItem {
@@ -48,6 +51,8 @@ const MOCK_BUYER_APPLICATIONS: BuyerApplicationDetail[] = [
     estimatedVolume: "5M – 25M gal/yr",
     useCase:
       "We run a 900-vehicle transit fleet and want to consolidate diesel + DEF sourcing and automate compliance.",
+    reviewNotes: null,
+    reviewedByName: null,
   },
   {
     id: "bapp-mercy",
@@ -63,6 +68,8 @@ const MOCK_BUYER_APPLICATIONS: BuyerApplicationDetail[] = [
     estimatedVolume: "1M – 5M gal/yr",
     useCase:
       "Backup generator fuel and heating oil across 6 hospital campuses; need verified emergency-response suppliers.",
+    reviewNotes: null,
+    reviewedByName: null,
   },
   {
     id: "bapp-harvest",
@@ -77,6 +84,8 @@ const MOCK_BUYER_APPLICATIONS: BuyerApplicationDetail[] = [
     industry: "Food & Agriculture",
     estimatedVolume: "25M+ gal/yr",
     useCase: "Multi-plant manufacturer sourcing diesel and propane nationwide.",
+    reviewNotes: null,
+    reviewedByName: null,
   },
   {
     id: "bapp-skyport",
@@ -91,6 +100,8 @@ const MOCK_BUYER_APPLICATIONS: BuyerApplicationDetail[] = [
     industry: "Aviation / Airport",
     estimatedVolume: "< 100K gal/yr",
     useCase: "Small FBO exploring jet fuel options.",
+    reviewNotes: null,
+    reviewedByName: null,
   },
 ]
 
@@ -109,6 +120,8 @@ function rowToDetail(row: Record<string, unknown>): BuyerApplicationDetail {
     industry: s(row.industry),
     estimatedVolume: s(row.estimated_volume),
     useCase: s(row.use_case),
+    reviewNotes: s(row.review_notes),
+    reviewedByName: null,
   }
 }
 
@@ -157,7 +170,12 @@ export async function getBuyerApplication(
     .maybeSingle()
 
   if (error || !data) return null
-  return rowToDetail(data)
+  const detail = rowToDetail(data)
+  if (data.reviewed_by) {
+    const { data: admin } = await supabase.from("profiles").select("full_name").eq("id", data.reviewed_by).maybeSingle()
+    detail.reviewedByName = (admin?.full_name as string | null) ?? "GridLink admin"
+  }
+  return detail
 }
 
 export async function countPendingBuyerApplications(): Promise<number> {

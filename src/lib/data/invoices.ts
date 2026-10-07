@@ -73,7 +73,8 @@ function lastMonths(n: number): { month: string; label: string }[] {
   d.setUTCDate(1)
   for (let i = n - 1; i >= 0; i--) {
     const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1))
-    out.push({ month: m.toISOString().slice(0, 7), label: format(m, "MMM") })
+    // Label in UTC: these are UTC month starts, and a local-time format slips a month on servers west of UTC.
+    out.push({ month: m.toISOString().slice(0, 7), label: m.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) })
   }
   return out
 }
@@ -247,26 +248,29 @@ export async function createContractForAward(params: {
   ])
   if (!rfp) return null
 
+  // One contract per RFP, and it is never rewritten: orders and invoices hang
+  // off it. A repeat call for the same supplier is a no-op; a different
+  // supplier is refused.
+  const { data: existing } = await admin.from("contracts").select("id, vendor_id").eq("rfp_id", rfp.id).maybeSingle()
+  if (existing) return existing.vendor_id === params.vendorId ? (existing.id as string) : null
+
   const { data, error } = await admin
     .from("contracts")
-    .upsert(
-      {
-        rfp_id: rfp.id,
-        buyer_id: params.buyerId,
-        vendor_id: params.vendorId,
-        title: rfp.title,
-        fuel_type: rfp.fuel_type ?? null,
-        quantity_gallons: rfp.quantity_gallons ?? null,
-        price_per_gallon: resp?.price_per_gallon ?? null,
-        delivery_terms: resp?.delivery_terms ?? null,
-        net_days: netDaysFrom(resp?.delivery_terms as string | null),
-        pricing_mode: (resp?.pricing_mode as string) ?? "fixed",
-        index_name: (resp?.index_name as string) ?? null,
-        differential: resp?.differential ?? null,
-        is_demo: Boolean(rfp.is_demo),
-      },
-      { onConflict: "rfp_id" }
-    )
+    .insert({
+      rfp_id: rfp.id,
+      buyer_id: params.buyerId,
+      vendor_id: params.vendorId,
+      title: rfp.title,
+      fuel_type: rfp.fuel_type ?? null,
+      quantity_gallons: rfp.quantity_gallons ?? null,
+      price_per_gallon: resp?.price_per_gallon ?? null,
+      delivery_terms: resp?.delivery_terms ?? null,
+      net_days: netDaysFrom(resp?.delivery_terms as string | null),
+      pricing_mode: (resp?.pricing_mode as string) ?? "fixed",
+      index_name: (resp?.index_name as string) ?? null,
+      differential: resp?.differential ?? null,
+      is_demo: Boolean(rfp.is_demo),
+    })
     .select("id")
     .single()
   if (error) {
@@ -387,12 +391,14 @@ async function hydrateNames(rows: InvoiceRow[]) {
 
 export async function listInvoices(viewer: Viewer): Promise<InvoiceListItem[]> {
   if (!isSupabaseConfigured()) {
-    return mock().invoices.filter((i) => isParty(i, viewer)).map((i) => ({ ...i, ...overdueInfo(i.dueDate, i.status) }))
+    // A draft is the supplier's working copy: buyers never see it, in lists or payloads.
+    return mock().invoices.filter((i) => isParty(i, viewer) && !(viewer.role === "buyer" && i.status === "draft")).map((i) => ({ ...i, ...overdueInfo(i.dueDate, i.status) }))
       .sort((a, b) => b.issueDate.localeCompare(a.issueDate))
   }
 
   let q = createAdminClient().from("invoices").select("*").order("issue_date", { ascending: false }).order("seq", { ascending: false })
-  if (viewer.role === "buyer") q = q.eq("buyer_id", viewer.id)
+  // A draft is the supplier's working copy: buyers never see it, in lists or payloads.
+  if (viewer.role === "buyer") q = q.eq("buyer_id", viewer.id).neq("status", "draft")
   if (viewer.role === "vendor") q = q.eq("vendor_id", viewer.id)
   const { data } = await q
   const rows = (data ?? []) as InvoiceRow[]
@@ -480,11 +486,12 @@ async function loadDetail(row: InvoiceRow): Promise<InvoiceDetail> {
 export async function getInvoice(id: string, viewer: Viewer): Promise<InvoiceDetail | null> {
   if (!isSupabaseConfigured()) {
     const inv = mock().invoices.find((i) => i.id === id)
-    if (!inv || !isParty(inv, viewer)) return null
+    if (!inv || !isParty(inv, viewer) || (viewer.role === "buyer" && inv.status === "draft")) return null
     return { ...inv, ...overdueInfo(inv.dueDate, inv.status) }
   }
   const { data } = await createAdminClient().from("invoices").select("*").eq("id", id).maybeSingle()
   if (!data || !isParty({ buyerId: data.buyer_id as string, vendorId: data.vendor_id as string }, viewer)) return null
+  if (viewer.role === "buyer" && data.status === "draft") return null
   return loadDetail(data as InvoiceRow)
 }
 
@@ -499,7 +506,9 @@ export async function getInvoiceByToken(token: string): Promise<InvoiceDetail | 
 }
 
 export async function getInvoicePdfBytes(invoice: InvoiceDetail): Promise<Buffer> {
-  if (isSupabaseConfigured() && invoice.pdfPath) {
+  // The stored PDF is the snapshot taken when the invoice was sent. Once an
+  // invoice is void that snapshot is misleading, so render it fresh instead.
+  if (isSupabaseConfigured() && invoice.pdfPath && invoice.status !== "void") {
     const { data } = await createAdminClient().storage.from("invoices").download(invoice.pdfPath)
     if (data) return Buffer.from(await data.arrayBuffer())
   }
@@ -571,7 +580,7 @@ export async function createInvoice(
       buyerName: contract.buyerName,
     })
     store.invoices.unshift(inv)
-    await markDeliveriesBilled(lines.map((l) => l.deliveryId ?? "").filter(Boolean), inv.id)
+    await markDeliveriesBilled(lines.map((l) => l.deliveryId ?? "").filter(Boolean), inv.id, { vendorId, contractId: contract.id })
     return { ok: true, invoiceId: inv.id }
   }
 
@@ -623,7 +632,7 @@ export async function createInvoice(
       amount: l.amount,
     }))
   )
-  await markDeliveriesBilled(lines.map((l) => l.deliveryId ?? "").filter(Boolean), inv.id as string)
+  await markDeliveriesBilled(lines.map((l) => l.deliveryId ?? "").filter(Boolean), inv.id as string, { vendorId, contractId: contract.id as string })
   await logEvent(inv.id as string, "created", { id: actorProfileId, role: "vendor" })
   return { ok: true, invoiceId: inv.id as string }
 }
@@ -642,7 +651,7 @@ export async function updateInvoice(invoiceId: string, vendorId: string, input: 
   }
 
   const admin = createAdminClient()
-  const { data: inv } = await admin.from("invoices").select("id, status").eq("id", invoiceId).eq("vendor_id", vendorId).maybeSingle()
+  const { data: inv } = await admin.from("invoices").select("id, status, contract_id").eq("id", invoiceId).eq("vendor_id", vendorId).maybeSingle()
   if (!inv) return { ok: false, message: "Invoice not found." }
   if (inv.status !== "draft") return { ok: false, message: "Only drafts can be edited." }
 
@@ -668,7 +677,7 @@ export async function updateInvoice(invoiceId: string, vendorId: string, input: 
     }))
   )
   await unbillDeliveriesForInvoice(invoiceId)
-  await markDeliveriesBilled(lines.map((l) => l.deliveryId ?? "").filter(Boolean), invoiceId)
+  await markDeliveriesBilled(lines.map((l) => l.deliveryId ?? "").filter(Boolean), invoiceId, { vendorId, contractId: inv.contract_id as string })
   return { ok: true }
 }
 
@@ -744,13 +753,37 @@ export async function voidInvoice(invoiceId: string, vendorId: string, actorProf
     return { ok: true }
   }
   const admin = createAdminClient()
-  const { data: inv } = await admin.from("invoices").select("id, status").eq("id", invoiceId).eq("vendor_id", vendorId).maybeSingle()
+  const { data: inv } = await admin.from("invoices").select("*").eq("id", invoiceId).eq("vendor_id", vendorId).maybeSingle()
   if (!inv) return { ok: false, message: "Invoice not found." }
+  if (inv.status === "void") return { ok: false, message: "This invoice is already void." }
   if (inv.status === "paid") return { ok: false, message: "Paid invoices can't be voided." }
+  // Money already received has to stay attached to a live invoice.
+  if ((Number(inv.amount_paid) || 0) > 0) return { ok: false, message: "This invoice has payments recorded against it, so it can't be voided. Issue a credit on a new invoice instead." }
+  const wasSent = inv.status !== "draft"
   const { error } = await admin.from("invoices").update({ status: "void", voided_at: new Date().toISOString() }).eq("id", invoiceId)
   if (error) return { ok: false, message: "Couldn't void the invoice." }
   await unbillDeliveriesForInvoice(invoiceId)
   await logEvent(invoiceId, "voided", { id: actorProfileId, role: "vendor" }, reason?.trim() || null)
+
+  // The buyer was told to pay this; tell them not to.
+  if (wasSent) {
+    const detail = await loadDetail({ ...inv, status: "void" } as InvoiceRow)
+    const to = await emailForProfile(detail.buyerId)
+    if (to) {
+      await sendEmail({
+        to,
+        template: "order-event",
+        data: {
+          recipientName: detail.buyerName,
+          headline: `Invoice ${detail.number} was voided`,
+          intro: `${detail.vendorName} voided this invoice. No payment is due on it.`,
+          rows: [["Invoice", detail.number], ["Amount", money(detail.total)], ["Reason", reason?.trim() || "Not given"]],
+          ctaLabel: "View invoices",
+          ctaUrl: `${siteUrl()}/buyer/invoices`,
+        },
+      })
+    }
+  }
   return { ok: true }
 }
 
@@ -765,11 +798,30 @@ export async function resolveDispute(invoiceId: string, vendorId: string, actorP
     return { ok: true }
   }
   const admin = createAdminClient()
-  const { data: inv } = await admin.from("invoices").select("id, status, amount_paid").eq("id", invoiceId).eq("vendor_id", vendorId).maybeSingle()
+  if (!note.trim()) return { ok: false, message: "Add a note explaining how the dispute was resolved." }
+  const { data: inv } = await admin.from("invoices").select("*").eq("id", invoiceId).eq("vendor_id", vendorId).maybeSingle()
   if (!inv || inv.status !== "disputed") return { ok: false, message: "No open dispute on this invoice." }
-  const { error } = await admin.from("invoices").update({ status: nextStatus(Number(inv.amount_paid) || 0) }).eq("id", invoiceId)
+  const status = nextStatus(Number(inv.amount_paid) || 0)
+  const { error } = await admin.from("invoices").update({ status }).eq("id", invoiceId)
   if (error) return { ok: false, message: "Couldn't resolve the dispute." }
-  await logEvent(invoiceId, "dispute_resolved", { id: actorProfileId, role: "vendor" }, note.trim() || null)
+  await logEvent(invoiceId, "dispute_resolved", { id: actorProfileId, role: "vendor" }, note.trim())
+
+  const detail = await loadDetail({ ...inv, status } as InvoiceRow)
+  const to = await emailForProfile(detail.buyerId)
+  if (to) {
+    await sendEmail({
+      to,
+      template: "order-event",
+      data: {
+        recipientName: detail.buyerName,
+        headline: `Dispute resolved on invoice ${detail.number}`,
+        intro: `${detail.vendorName} responded to your dispute. The invoice is open for payment again.`,
+        rows: [["Invoice", detail.number], ["Balance due", money(detail.balance)], ["Supplier's note", note.trim()]],
+        ctaLabel: "View invoice",
+        ctaUrl: `${siteUrl()}/buyer/invoices/${invoiceId}`,
+      },
+    })
+  }
   return { ok: true }
 }
 
@@ -816,6 +868,7 @@ export async function recordPayment(
     const inv = store.invoices.find((i) => i.id === invoiceId)
     if (!inv || !isParty(inv, actor)) return { ok: false, message: "Invoice not found." }
     if (!isOpenStatus(inv.status)) return { ok: false, message: "Payments can only be recorded on open invoices." }
+    if (amount > r2(inv.total - inv.amountPaid)) return { ok: false, message: `That's more than the ${money(r2(inv.total - inv.amountPaid))} balance due.` }
     inv.payments.unshift({ id: `p-${Date.now()}`, amount, method: input.method, reference: input.reference?.trim() || null, paidAt: input.paidAt, recordedRole: actor.role, note: input.note?.trim() || null })
     inv.amountPaid = r2(inv.amountPaid + amount)
     inv.balance = r2(inv.total - inv.amountPaid)
@@ -832,17 +885,36 @@ export async function recordPayment(
   if (!row || !isParty({ buyerId: row.buyer_id as string, vendorId: row.vendor_id as string }, actor)) return { ok: false, message: "Invoice not found." }
   if (!isOpenStatus(row.status as InvoiceStatus)) return { ok: false, message: "Payments can only be recorded on open invoices." }
 
+  const total = Number(row.total) || 0
+  const alreadyPaid = Number(row.amount_paid) || 0
+  const balance = r2(total - alreadyPaid)
+  if (amount > balance) return { ok: false, message: `That's more than the ${money(balance)} balance due.` }
+
+  const paid = r2(alreadyPaid + amount)
+  const isPaid = paid >= total
+  // A part-payment doesn't settle a dispute: it stays open until the supplier resolves it.
+  const status: InvoiceStatus = isPaid ? "paid" : row.status === "disputed" ? "disputed" : "partially_paid"
+
+  // Claim the balance first, and only if nobody else changed it since we read
+  // it: two payments submitted at once can't both be applied to the same balance.
+  const { data: claimed, error: claimError } = await admin
+    .from("invoices")
+    .update({ amount_paid: paid, status, paid_at: isPaid ? new Date().toISOString() : null })
+    .eq("id", invoiceId)
+    .eq("amount_paid", alreadyPaid)
+    .select("id")
+  if (claimError) return { ok: false, message: "Couldn't record the payment." }
+  if (!claimed?.length) return { ok: false, message: "This invoice was just updated by someone else. Refresh and try again." }
+
   const { error } = await admin.from("payments").insert({
     invoice_id: invoiceId, amount, method: input.method, reference: input.reference?.trim() || null, paid_at: input.paidAt,
     recorded_by: actor.profileId, recorded_role: actor.role === "admin" ? null : actor.role, note: input.note?.trim() || null,
   })
-  if (error) return { ok: false, message: "Couldn't record the payment." }
-
-  const total = Number(row.total) || 0
-  const paid = r2((Number(row.amount_paid) || 0) + amount)
-  const isPaid = paid >= total
-  const status: InvoiceStatus = isPaid ? "paid" : "partially_paid"
-  await admin.from("invoices").update({ amount_paid: paid, status, paid_at: isPaid ? new Date().toISOString() : null }).eq("id", invoiceId)
+  if (error) {
+    // Put the balance back so the invoice and the ledger never disagree.
+    await admin.from("invoices").update({ amount_paid: alreadyPaid, status: row.status as string, paid_at: (row.paid_at as string) ?? null }).eq("id", invoiceId)
+    return { ok: false, message: "Couldn't record the payment." }
+  }
   await logEvent(invoiceId, "payment_recorded", { id: actor.profileId, role: actor.role }, input.reference?.trim() || null, amount)
   if (isPaid) await logEvent(invoiceId, "paid", { role: "system" })
 
@@ -954,7 +1026,8 @@ async function paymentsFor(viewer: Viewer, invoices: InvoiceListItem[]) {
   if (!isSupabaseConfigured()) {
     return mock().invoices.filter((i) => isParty(i, viewer)).flatMap((i) => i.payments.map((p) => ({ paidAt: p.paidAt, amount: p.amount, invoiceId: i.id })))
   }
-  const ids = invoices.map((i) => i.id)
+  // Void invoices carry no money (voiding is blocked once anything is paid).
+  const ids = invoices.filter((i) => i.status !== "void").map((i) => i.id)
   if (!ids.length) return []
   const { data } = await createAdminClient().from("payments").select("invoice_id, amount, paid_at").in("invoice_id", ids)
   return (data ?? []).map((p) => ({ paidAt: p.paid_at as string, amount: Number(p.amount) || 0, invoiceId: p.invoice_id as string }))

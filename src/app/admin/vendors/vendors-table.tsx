@@ -10,11 +10,12 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table"
-import { ArrowUpDown, ChevronRight, Search, ShieldCheck } from "lucide-react"
+import { ArrowUpDown, ChevronRight, Search, ShieldCheck, ShieldOff } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import type { DirectoryVendor } from "@/lib/directory/shared"
+import type { AdminVendorListItem } from "@/lib/data/admin-vendors"
 import { SPECIAL_CERTIFICATIONS } from "@/lib/schemas/vendor-application"
+import { Truncate } from "@/components/admin/truncate"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,7 +35,16 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-const CERT_FILTERS = SPECIAL_CERTIFICATIONS.filter((c) => c !== "None")
+const CERT_ITEMS = [
+  { value: "all", label: "All certifications" },
+  ...SPECIAL_CERTIFICATIONS.filter((c) => c !== "None").map((c) => ({ value: c as string, label: c as string })),
+]
+
+const STATUS_ITEMS = [
+  { value: "all", label: "All vendors" },
+  { value: "verified", label: "Verified" },
+  { value: "suspended", label: "Suspended" },
+]
 
 function formatGallons(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -42,7 +52,8 @@ function formatGallons(n: number) {
   return n.toLocaleString()
 }
 
-function formatDate(value: string) {
+function formatDate(value: string | null) {
+  if (!value) return "—"
   return new Date(value).toLocaleDateString("en-US", {
     timeZone: "UTC",
     month: "short",
@@ -51,15 +62,23 @@ function formatDate(value: string) {
   })
 }
 
-const columnHelper = createColumnHelper<DirectoryVendor>()
+const columnHelper = createColumnHelper<AdminVendorListItem>()
 
 const columns = [
   columnHelper.accessor("companyName", {
     header: "Company",
     cell: (info) => (
       <div className="flex items-center gap-2">
-        <span className="font-medium text-navy">{info.getValue()}</span>
-        <ShieldCheck className="size-3.5 shrink-0 text-emerald" />
+        <Link href={`/admin/vendors/${info.row.original.id}`} className="min-w-0 font-medium text-navy hover:underline">
+          <Truncate>{info.getValue()}</Truncate>
+        </Link>
+        {info.row.original.isVerified ? (
+          <ShieldCheck className="size-3.5 shrink-0 text-emerald" aria-label="Verified" />
+        ) : (
+          <Badge className="shrink-0 gap-1 bg-destructive/10 text-destructive">
+            <ShieldOff className="size-3" /> Suspended
+          </Badge>
+        )}
       </div>
     ),
   }),
@@ -82,7 +101,7 @@ const columns = [
       const states = info.getValue()
       const shown = states.slice(0, 2).join(", ")
       return (
-        <span className="whitespace-nowrap text-muted-foreground">
+        <span className="whitespace-nowrap text-muted-foreground" title={states.join(", ")}>
           {shown}
           {states.length > 2 ? ` +${states.length - 2}` : ""}
         </span>
@@ -93,7 +112,7 @@ const columns = [
     header: "Products",
     enableSorting: false,
     cell: (info) => (
-      <span className="text-muted-foreground">{info.getValue().join(", ")}</span>
+      <Truncate className="max-w-[14rem] text-muted-foreground">{info.getValue().join(", ")}</Truncate>
     ),
   }),
   columnHelper.accessor("annualGallons", {
@@ -117,19 +136,20 @@ const columns = [
     header: "",
     cell: (info) => (
       <Link
-        href={`/buyer/directory/${info.row.original.id}`}
+        href={`/admin/vendors/${info.row.original.id}`}
         className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}
       >
-        Profile
+        View
         <ChevronRight className="size-3.5" />
       </Link>
     ),
   }),
 ]
 
-export function VendorsTable({ data }: { data: DirectoryVendor[] }) {
+export function VendorsTable({ data }: { data: AdminVendorListItem[] }) {
   const [search, setSearch] = useState("")
   const [cert, setCert] = useState("all")
+  const [status, setStatus] = useState("all")
   const [sorting, setSorting] = useState<SortingState>([
     { id: "companyName", desc: false },
   ])
@@ -138,10 +158,17 @@ export function VendorsTable({ data }: { data: DirectoryVendor[] }) {
     const q = search.trim().toLowerCase()
     return data.filter((v) => {
       if (cert !== "all" && v.specialCertification !== cert) return false
-      if (q && !v.companyName.toLowerCase().includes(q)) return false
+      if (status !== "all" && v.isVerified !== (status === "verified")) return false
+      if (q) {
+        const haystack = [v.companyName, v.specialCertification, v.nationwide ? "nationwide" : "", ...v.states, ...v.products]
+          .join(" ")
+          .toLowerCase()
+        // Every word must appear somewhere: "texas diesel" finds Texas diesel suppliers.
+        if (!q.split(/\s+/).every((word) => haystack.includes(word))) return false
+      }
       return true
     })
-  }, [data, search, cert])
+  }, [data, search, cert, status])
 
   const table = useReactTable({
     data: filtered,
@@ -162,21 +189,33 @@ export function VendorsTable({ data }: { data: DirectoryVendor[] }) {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search vendors…"
-              className="w-56 pl-9"
+              placeholder="Search name, state, product…"
+              aria-label="Search vendors"
+              className="w-64 pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Select value={cert} onValueChange={(v) => setCert(v ?? "all")}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Certification" />
+          <Select value={status} onValueChange={(v) => setStatus(v ?? "all")} items={STATUS_ITEMS}>
+            <SelectTrigger className="w-40" aria-label="Verification status">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All certifications</SelectItem>
-              {CERT_FILTERS.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
+              {STATUS_ITEMS.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={cert} onValueChange={(v) => setCert(v ?? "all")} items={CERT_ITEMS}>
+            <SelectTrigger className="w-48" aria-label="Certification">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CERT_ITEMS.map((c) => (
+                <SelectItem key={c.value} value={c.value}>
+                  {c.label}
                 </SelectItem>
               ))}
             </SelectContent>

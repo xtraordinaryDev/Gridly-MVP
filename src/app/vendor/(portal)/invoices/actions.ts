@@ -109,6 +109,8 @@ export async function voidInvoiceAction(invoiceId: string, reason: string): Prom
 }
 
 export async function resolveDisputeAction(invoiceId: string, note: string): Promise<InvoiceActionResult> {
+  if (typeof note !== "string" || note.trim().length < 5) return { ok: false, message: "Add a note telling the buyer how the dispute was resolved." }
+  note = note.trim().slice(0, 2000)
   const { profile, vendorId } = await vendorContext()
   const res = await resolveDispute(invoiceId, vendorId, profile.id, note)
   if (res.ok) revalidate(invoiceId)

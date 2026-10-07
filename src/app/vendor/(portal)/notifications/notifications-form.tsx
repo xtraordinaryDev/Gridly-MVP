@@ -10,9 +10,10 @@ import { PRODUCTS_OFFERED, US_STATES } from "@/lib/schemas/vendor-application"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { saveNotificationPrefs } from "./actions"
+import { parseMinGallons } from "./schema"
 
 const FREQUENCIES = [
-  { value: "daily", label: "Daily", hint: "One digest each morning" },
+  { value: "daily", label: "Daily", hint: "One digest each morning when there are open RFPs waiting on you" },
   { value: "weekly", label: "Weekly", hint: "A summary every Monday" },
   { value: "never", label: "Never", hint: "No opportunity emails" },
 ] as const
@@ -92,7 +93,8 @@ export function NotificationsForm({
   const [frequency, setFrequency] = useState(initial.emailFrequency)
   const [fuelTypes, setFuelTypes] = useState<string[]>(initial.fuelTypes)
   const [states, setStates] = useState<string[]>(initial.states)
-  const [minGallons, setMinGallons] = useState<string>(String(initial.minGallons))
+  const [minGallons, setMinGallons] = useState<string>(initial.minGallons ? initial.minGallons.toLocaleString("en-US") : "")
+  const [minGallonsError, setMinGallonsError] = useState<string | null>(null)
   const [emergency, setEmergency] = useState(initial.emergencyImmediate)
 
   const allLicensedSelected =
@@ -100,12 +102,19 @@ export function NotificationsForm({
     licensedStates.every((s) => states.includes(s))
 
   function onSave() {
+    const gallons = parseMinGallons(minGallons)
+    if (!gallons.ok) {
+      setMinGallonsError(gallons.message)
+      document.getElementById("min-gallons")?.focus()
+      return
+    }
+    setMinGallonsError(null)
     startTransition(async () => {
       const res = await saveNotificationPrefs(vendorId, {
         emailFrequency: frequency,
         fuelTypes,
         states,
-        minGallons: Number(minGallons.replace(/,/g, "")) || 0,
+        minGallons: gallons.value,
         emergencyImmediate: emergency,
       })
       if (res.ok) {
@@ -154,14 +163,14 @@ export function NotificationsForm({
 
       <Section
         title="Fuel types of interest"
-        description="We'll prioritize RFPs for these products."
+        description="Your digest only lists RFPs for these products. Select none to include every fuel type."
       >
         <Chips options={PRODUCTS_OFFERED} value={fuelTypes} onChange={setFuelTypes} />
       </Section>
 
       <Section
         title="States of interest"
-        description="Choose where you want to see opportunities."
+        description="Your digest only lists RFPs delivering to these states. Select none to include every state."
       >
         <div className="mb-3">
           <button
@@ -181,17 +190,28 @@ export function NotificationsForm({
 
       <Section
         title="Minimum gallons threshold"
-        description="Only notify me about RFPs at or above this quantity."
+        description="Only include RFPs at or above this quantity. Leave blank for no minimum."
       >
         <div className="flex items-center gap-2">
           <Input
+            id="min-gallons"
             inputMode="numeric"
+            aria-label="Minimum gallons"
+            aria-invalid={!!minGallonsError}
+            aria-describedby={minGallonsError ? "min-gallons-error" : undefined}
+            placeholder="No minimum"
             value={minGallons}
-            onChange={(e) => setMinGallons(e.target.value)}
+            onChange={(e) => {
+              setMinGallons(e.target.value)
+              if (minGallonsError) setMinGallonsError(null)
+            }}
             className="max-w-40"
           />
           <span className="text-sm text-muted-foreground">gallons</span>
         </div>
+        {minGallonsError ? (
+          <p id="min-gallons-error" role="alert" className="mt-2 text-sm text-destructive">{minGallonsError}</p>
+        ) : null}
       </Section>
 
       <Section title="Emergency & rush RFPs">

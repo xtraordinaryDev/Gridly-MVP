@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 
+import { requireVendor } from "@/lib/auth"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { ProfileSchema } from "./schema"
+import { sendProfileChangeRequestEmail } from "@/lib/email/notifications"
+import { ChangeRequestSchema, ProfileSchema } from "./schema"
 
 export type ProfileResult = { ok: true } | { ok: false; message: string }
 
@@ -25,10 +28,17 @@ export async function updateVendorProfile(
 
   if (!isSupabaseConfigured()) return { ok: true }
 
+  // Vendors have no UPDATE policy on their own row (it also holds is_verified
+  // and the locked legal fields), so resolve the caller's vendor here and
+  // write exactly these columns with the service role.
+  const { profile } = await requireVendor()
+
   try {
-    const supabase = await createClient()
+    const admin = createAdminClient()
+    const { data: own } = await admin.from("vendors").select("id").eq("profile_id", profile.id).maybeSingle()
+    if (!own || own.id !== vendorId) return { ok: false, message: "Couldn't save your profile." }
     const v = parsed.data
-    const { error } = await supabase
+    const { error } = await admin
       .from("vendors")
       .update({
         website_url: v.website || null,
@@ -47,7 +57,7 @@ export async function updateVendorProfile(
         annual_gallons_distributed: toNum(v.annualGallonsDistributed),
         standard_order_lead_time: v.standardOrderLeadTime || null,
       })
-      .eq("id", vendorId)
+      .eq("id", own.id)
 
     if (error) return { ok: false, message: "Couldn't save your profile." }
 
@@ -64,11 +74,54 @@ export async function requestFieldChange(
   field: string,
   message: string
 ): Promise<ProfileResult> {
-  if (!message.trim()) {
-    return { ok: false, message: "Please describe the change you need." }
+  const { profile, preview } = await requireVendor()
+  const parsed = ChangeRequestSchema.safeParse({ field, message })
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid request." }
   }
-  // Locked fields (legal entity name, entity type, EIN-tied data) require an
-  // admin review. Email notification to the GridLink team is wired in Phase 7.
-  console.info(`[change-request] ${field}: ${message}`)
-  return { ok: true }
+  if (preview) return { ok: true }
+
+  const unavailable = "We couldn't send your request right now. Please email GridLink support instead."
+  try {
+    const supabase = await createClient()
+    const [{ data: vendors }, { data: auth }] = await Promise.all([
+      supabase.from("vendors").select("id, company_name, application_id").eq("profile_id", profile.id).order("created_at", { ascending: true }).limit(1),
+      supabase.auth.getUser(),
+    ])
+    const vendor = vendors?.[0]
+    if (!vendor) return { ok: false, message: "No supplier record is linked to your account." }
+
+    // Locked fields need an admin review: email the ops inbox and, when the
+    // vendor came through an application, note it on that application's log.
+    const email = await sendProfileChangeRequestEmail({
+      vendorId: vendor.id as string,
+      companyName: vendor.company_name as string,
+      requestedBy: profile.fullName,
+      requesterEmail: auth.user?.email ?? null,
+      field: parsed.data.field,
+      message: parsed.data.message,
+    })
+
+    let logged = false
+    if (vendor.application_id) {
+      const { error } = await createAdminClient().from("application_activity_log").insert({
+        application_id: vendor.application_id,
+        admin_id: null,
+        action: "note",
+        notes: `Vendor change request (${auth.user?.email ?? profile.fullName ?? "vendor"}) — ${parsed.data.field}: ${parsed.data.message}`,
+      })
+      if (error) console.error("requestFieldChange log error:", error.message)
+      logged = !error
+    }
+
+    // No ops inbox means nobody would ever see it — say so rather than pretend.
+    if (email.status === "no-recipient" || (email.status === "failed" && !logged)) {
+      console.error(`requestFieldChange: not delivered (${email.status})`)
+      return { ok: false, message: unavailable }
+    }
+    return { ok: true }
+  } catch (err) {
+    console.error("requestFieldChange error:", err)
+    return { ok: false, message: unavailable }
+  }
 }

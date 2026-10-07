@@ -57,7 +57,12 @@ Migrations live in `supabase/migrations/` and are applied **in filename order**.
 There is no automatic runner yet; apply new ones with the Supabase MCP
 `apply_migration` tool or by pasting into the SQL Editor, then record it here.
 
-Applied to `gridlink`: **0001 → 0015** (as of 2026-10-01).
+Applied to `gridlink`: **0001 → 0016 and 0019** (as of 2026-10-05).
+
+**Pending — must be applied in the same window as the code that expects them:**
+
+- `0017_security_hardening.sql` — locks storage buckets, moves AI briefs off `rfps`, removes self-service role/verification writes. The app version before it (direct browser uploads, session-client bid writes, `rfps.ai_brief`) breaks once it is applied, so apply it and deploy together. After applying, run `node sec-verify.cjs` from the QA scripts.
+- `0018_admin_guards.sql` — one vendor per application (de-duplicates first) and `buyer_applications.review_notes`.
 
 When adding a migration: number it next in sequence, apply to staging first,
 then production, then update the line above in the same PR.

@@ -10,12 +10,14 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table"
-import { ArrowUpDown, ChevronRight } from "lucide-react"
+import { ArrowUpDown, ChevronRight, Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { BuyerApplicationListItem } from "@/lib/data/buyer-applications"
 import type { ApplicationStatus } from "@/lib/data/applications"
+import { Truncate } from "@/components/admin/truncate"
 import { buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -55,25 +57,25 @@ const columnHelper = createColumnHelper<BuyerApplicationListItem>()
 const columns = [
   columnHelper.accessor("companyName", {
     header: "Organization",
-    cell: (info) => <span className="font-medium text-navy">{info.getValue()}</span>,
+    cell: (info) => <Truncate className="font-medium text-navy">{info.getValue()}</Truncate>,
   }),
   columnHelper.accessor("fullName", {
     header: "Contact",
     enableSorting: false,
-    cell: (info) => <span className="text-foreground">{info.getValue()}</span>,
+    cell: (info) => <Truncate className="max-w-[11rem] text-foreground">{info.getValue()}</Truncate>,
   }),
   columnHelper.accessor("email", {
     header: "Email",
     enableSorting: false,
     cell: (info) => (
-      <span className="text-muted-foreground">{info.getValue()}</span>
+      <Truncate className="max-w-[11rem] text-muted-foreground">{info.getValue()}</Truncate>
     ),
   }),
   columnHelper.accessor("industry", {
     header: "Industry",
     enableSorting: false,
     cell: (info) => (
-      <span className="text-muted-foreground">{info.getValue() ?? "—"}</span>
+      <Truncate className="max-w-[11rem] text-muted-foreground">{info.getValue()}</Truncate>
     ),
   }),
   columnHelper.accessor("submittedAt", {
@@ -114,17 +116,19 @@ export function BuyersTable({
   const [status, setStatus] = useState<string>(
     STATUS_FILTERS.some((f) => f.value === initialStatus) ? initialStatus : "all"
   )
+  const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([
     { id: "submittedAt", desc: true },
   ])
 
-  const filtered = useMemo(
-    () =>
-      status === "all"
-        ? data
-        : data.filter((d) => d.status === (status as ApplicationStatus)),
-    [data, status]
-  )
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return data.filter((d) => {
+      if (status !== "all" && d.status !== (status as ApplicationStatus)) return false
+      if (q && !`${d.companyName} ${d.fullName} ${d.email} ${d.industry ?? ""}`.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [data, status, search])
 
   const table = useReactTable({
     data: filtered,
@@ -141,18 +145,30 @@ export function BuyersTable({
         <p className="text-sm text-muted-foreground">
           {filtered.length} request{filtered.length === 1 ? "" : "s"}
         </p>
-        <Select value={status} onValueChange={(v) => setStatus(v ?? "all")}>
-          <SelectTrigger className="w-52">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_FILTERS.map((f) => (
-              <SelectItem key={f.value} value={f.value}>
-                {f.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search organization, contact, email…"
+              aria-label="Search buyer requests"
+              className="w-72 max-w-full pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Select value={status} onValueChange={(v) => setStatus(v ?? "all")} items={STATUS_FILTERS}>
+            <SelectTrigger className="w-44" aria-label="Filter by status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -163,7 +179,7 @@ export function BuyersTable({
                 {hg.headers.map((header) => {
                   const canSort = header.column.getCanSort()
                   return (
-                    <TableHead key={header.id} className="text-xs uppercase tracking-wide">
+                    <TableHead key={header.id} className={cn("text-xs uppercase tracking-wide", header.column.id === "action" && "sticky right-0 bg-muted")}>
                       {canSort ? (
                         <button
                           type="button"
@@ -193,7 +209,7 @@ export function BuyersTable({
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    <TableCell key={cell.id} className={cell.column.id === "action" ? "sticky right-0 bg-card text-right" : undefined}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}

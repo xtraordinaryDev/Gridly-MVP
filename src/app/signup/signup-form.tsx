@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react"
 
 import {
   BUYER_INDUSTRIES,
+  BUYER_REQUEST_LIMITS as LIMITS,
   BUYER_VOLUME_RANGES,
   BuyerAccessRequestSchema,
   type BuyerAccessRequest,
@@ -32,11 +33,16 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
+import { useBotCheck } from "@/components/marketing/bot-check"
 import { requestBuyerAccess } from "./actions"
+
+const INDUSTRY_ITEMS = BUYER_INDUSTRIES.map((v) => ({ value: v as string, label: v as string }))
+const VOLUME_ITEMS = BUYER_VOLUME_RANGES.map((v) => ({ value: v as string, label: v as string }))
 
 export function SignupForm({ preview }: { preview: boolean }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const bot = useBotCheck()
 
   const form = useForm<BuyerAccessRequest>({
     resolver: zodResolver(BuyerAccessRequestSchema),
@@ -53,7 +59,7 @@ export function SignupForm({ preview }: { preview: boolean }) {
 
   function onSubmit(values: BuyerAccessRequest) {
     startTransition(async () => {
-      const res = await requestBuyerAccess(values)
+      const res = await requestBuyerAccess(values, bot.meta())
       if (res.ok) {
         router.push("/signup/submitted")
       } else {
@@ -64,7 +70,8 @@ export function SignupForm({ preview }: { preview: boolean }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="relative space-y-4">
+        {bot.field}
         <FormField
           control={form.control}
           name="fullName"
@@ -72,7 +79,7 @@ export function SignupForm({ preview }: { preview: boolean }) {
             <FormItem>
               <FormLabel>Full name</FormLabel>
               <FormControl>
-                <Input placeholder="Jordan Kim" {...field} />
+                <Input placeholder="Jordan Kim" autoComplete="name" maxLength={LIMITS.fullName} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -85,7 +92,7 @@ export function SignupForm({ preview }: { preview: boolean }) {
             <FormItem>
               <FormLabel>Company / organization</FormLabel>
               <FormControl>
-                <Input placeholder="Metro Transit Authority" {...field} />
+                <Input placeholder="Metro Transit Authority" autoComplete="organization" maxLength={LIMITS.companyName} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -99,7 +106,7 @@ export function SignupForm({ preview }: { preview: boolean }) {
               <FormItem>
                 <FormLabel>Work email</FormLabel>
                 <FormControl>
-                  <Input type="email" placeholder="you@company.com" {...field} />
+                  <Input type="email" placeholder="you@company.com" autoComplete="email" maxLength={LIMITS.email} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -112,7 +119,7 @@ export function SignupForm({ preview }: { preview: boolean }) {
               <FormItem>
                 <FormLabel>Phone</FormLabel>
                 <FormControl>
-                  <Input placeholder="(555) 123-4567" {...field} />
+                  <Input type="tel" placeholder="(555) 123-4567" autoComplete="tel" maxLength={LIMITS.phone} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -126,9 +133,9 @@ export function SignupForm({ preview }: { preview: boolean }) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Industry</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value ?? null} items={INDUSTRY_ITEMS}>
                   <FormControl>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select industry" />
                     </SelectTrigger>
                   </FormControl>
@@ -150,9 +157,9 @@ export function SignupForm({ preview }: { preview: boolean }) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Annual fuel volume</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={(v) => field.onChange(v ?? undefined)} value={field.value ?? null} items={VOLUME_ITEMS}>
                   <FormControl>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Optional" />
                     </SelectTrigger>
                   </FormControl>
@@ -179,6 +186,7 @@ export function SignupForm({ preview }: { preview: boolean }) {
                 <Textarea
                   rows={3}
                   placeholder="Tell us about your fuel procurement needs, fleet/sites, and what you're looking to source."
+                  maxLength={LIMITS.useCase}
                   {...field}
                 />
               </FormControl>

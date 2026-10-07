@@ -73,6 +73,8 @@ export function InvoiceDetailView({
 }) {
   const counterpartyLabel = role === "buyer" ? "From" : "Bill to"
   const counterparty = role === "buyer" ? invoice.vendorName : invoice.buyerName
+  const isVoid = invoice.status === "void"
+  const voided = isVoid ? invoice.events.find((e) => e.type === "voided") : undefined
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -96,18 +98,38 @@ export function InvoiceDetailView({
               </div>
               <p className="mt-1 text-sm text-muted-foreground">{invoice.contractTitle}</p>
             </div>
-            <div className="text-left sm:text-right">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                {invoice.status === "paid" ? "Paid" : "Balance due"}
-              </p>
-              <p className="text-3xl font-bold tabular-nums text-navy">
-                {money(invoice.status === "paid" ? invoice.total : invoice.balance)}
-              </p>
-              {invoice.amountPaid > 0 && invoice.status !== "paid" ? (
-                <p className="text-xs text-muted-foreground">{money(invoice.amountPaid)} of {money(invoice.total)} paid</p>
-              ) : null}
-            </div>
+            {isVoid ? (
+              <div className="text-left sm:text-right">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Voided · nothing due</p>
+                <p className="text-3xl font-bold tabular-nums text-muted-foreground line-through">{money(invoice.total)}</p>
+              </div>
+            ) : (
+              <div className="text-left sm:text-right">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {invoice.status === "paid" ? "Paid" : "Balance due"}
+                </p>
+                <p className="text-3xl font-bold tabular-nums text-navy">
+                  {money(invoice.status === "paid" ? invoice.total : invoice.balance)}
+                </p>
+                {invoice.amountPaid > 0 && invoice.status !== "paid" ? (
+                  <p className="text-xs text-muted-foreground">{money(invoice.amountPaid)} of {money(invoice.total)} paid</p>
+                ) : null}
+              </div>
+            )}
           </div>
+
+          {isVoid ? (
+            <div role="status" className="mt-4 flex items-start gap-3 rounded-lg border border-border bg-muted p-4 text-sm">
+              <Ban className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="font-semibold text-foreground">This invoice was voided{voided ? ` on ${fmtDate(voided.createdAt)}` : ""}</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {role === "buyer" ? "No payment is due. Your supplier will issue a new invoice if one is needed." : "It can no longer be paid. Issue a new invoice if one is needed."}
+                </p>
+                {voided?.message ? <p className="mt-1 text-muted-foreground">Reason: {voided.message}</p> : null}
+              </div>
+            </div>
+          ) : null}
 
           {invoice.status === "disputed" && invoice.disputeReason ? (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -131,7 +153,7 @@ export function InvoiceDetailView({
             <div>
               <dt className="text-xs text-muted-foreground">Due</dt>
               <dd className={cn("font-medium", invoice.isOverdue && "text-red-700")}>{fmtDate(invoice.dueDate)}</dd>
-              <dd className="text-xs text-muted-foreground">Net {invoice.contract.netDays}</dd>
+              {isVoid ? null : <dd className="text-xs text-muted-foreground">Net {invoice.contract.netDays}</dd>}
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Contract rate</dt>
@@ -189,9 +211,10 @@ export function InvoiceDetailView({
               {invoice.amountPaid > 0 ? (
                 <>
                   <div className="flex justify-between"><dt className="text-muted-foreground">Paid</dt><dd className="tabular-nums">-{money(invoice.amountPaid)}</dd></div>
-                  <div className="flex justify-between font-semibold"><dt>Balance</dt><dd className="tabular-nums">{money(invoice.balance)}</dd></div>
+                  {isVoid ? null : <div className="flex justify-between font-semibold"><dt>Balance</dt><dd className="tabular-nums">{money(invoice.balance)}</dd></div>}
                 </>
               ) : null}
+              {isVoid ? <div className="flex justify-between font-semibold text-muted-foreground"><dt>Voided</dt><dd>Nothing due</dd></div> : null}
             </dl>
           </div>
           {(() => {

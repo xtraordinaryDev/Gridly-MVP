@@ -177,9 +177,34 @@ const optionalUrl = z
 const requiredNumber = (label: string) =>
   z
     .number({ error: `${label} is required` })
-    .nonnegative(`${label} must be a positive number`)
+    .int(`${label} must be a whole number`)
+    .nonnegative(`${label} can't be negative`)
+    .max(100_000_000_000, `${label} looks too large`)
 
-const optionalNumber = z.number().optional()
+// 10–15 digits, with the usual punctuation and an optional extension.
+const PHONE = /^\+?[\d\s().-]+(?:\s*(?:x|ext\.?)\s*\d{1,6})?$/i
+const phone = (label: string) =>
+  requiredString(label).refine(
+    (v) => {
+      const digits = v.replace(/(?:x|ext\.?)\s*\d{1,6}$/i, "").replace(/\D/g, "").length
+      return PHONE.test(v) && digits >= 10 && digits <= 15
+    },
+    "Enter a valid phone number, e.g. (312) 555-0100"
+  )
+
+const yearFounded = z
+  .number({ error: "Enter a 4-digit year" })
+  .int("Enter a 4-digit year")
+  .min(1800, "Enter a year from 1800 onward")
+  .refine((y) => y <= new Date().getFullYear(), "Year founded can't be in the future")
+  .optional()
+
+const usDotNumber = z
+  .string()
+  .trim()
+  .regex(/^\d{1,8}$/, "US DOT numbers are digits only (up to 8)")
+  .optional()
+  .or(z.literal(""))
 
 // Uploaded file. On the client this is a browser `File`; optional fields may
 // be omitted. (Persisted documents are referenced by URL elsewhere.)
@@ -252,9 +277,9 @@ export const VendorApplicationObjectSchema = z
       .min(1, "Select at least one organization type"),
     specialCertification: z.enum(SPECIAL_CERTIFICATIONS).optional(),
     nationwide: z.boolean({ error: "Specify nationwide coverage" }),
-    usDotNumber: optionalString,
+    usDotNumber,
     websiteUrl: optionalUrl,
-    yearFounded: optionalNumber,
+    yearFounded,
 
     // --- Documents (uploads — stored as file references after submit) ---
     w9Form: requiredFile("W-9 form"),
@@ -266,23 +291,23 @@ export const VendorApplicationObjectSchema = z
     salesRepFirstName: requiredString("Sales rep first name"),
     salesRepLastName: requiredString("Sales rep last name"),
     salesRepEmail: z.email("Enter a valid sales rep email"),
-    salesRepPhone: requiredString("Sales rep phone"),
+    salesRepPhone: phone("Sales rep phone"),
 
     // --- Dispatch Contact ---
     dispatchContactName: requiredString("Dispatch contact name"),
-    dispatchPhone: requiredString("Dispatch phone"),
+    dispatchPhone: phone("Dispatch phone"),
     dispatchEmail: z.email("Enter a valid dispatch email"),
 
     // --- Emergency Dispatch Contact ---
     emergencyDispatchName: requiredString("Emergency dispatch name"),
-    emergencyDispatchPhone: requiredString("Emergency dispatch phone"),
+    emergencyDispatchPhone: phone("Emergency dispatch phone"),
     emergencyDispatchEmail: z.email("Enter a valid emergency dispatch email"),
 
     // --- Billing ---
     billingAddress: requiredString("Billing address"),
     billingContactName: requiredString("Billing contact name"),
     billingEmail: z.email("Enter a valid billing email"),
-    billingPhone: requiredString("Billing phone"),
+    billingPhone: phone("Billing phone"),
     deliveryContactInfo: optionalString,
     billingSystem: optionalString,
 
@@ -350,9 +375,12 @@ export type VendorApplication = z.infer<typeof VendorApplicationSchema>
  * Variant used by the multi-step registration form: file fields are replaced
  * with Supabase Storage references (see `DocumentRefSchema`).
  */
+const requiredDocument = (message: string) =>
+  z.object(DocumentRefSchema.shape, { error: message })
+
 export const VendorRegistrationSchema = VendorApplicationObjectSchema.extend({
-  w9Form: DocumentRefSchema,
-  certificateOfInsurance: DocumentRefSchema,
+  w9Form: requiredDocument("Upload your W-9 form"),
+  certificateOfInsurance: requiredDocument("Upload your certificate of insurance"),
   distributorLicense: DocumentRefSchema.optional(),
   companyLogo: DocumentRefSchema.optional(),
 }).superRefine(pricingBasisRefinement)

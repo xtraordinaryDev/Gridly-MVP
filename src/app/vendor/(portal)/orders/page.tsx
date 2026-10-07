@@ -26,7 +26,7 @@ export default async function VendorOrdersPage() {
         <h1 className="text-2xl font-bold tracking-tight text-navy">Orders &amp; deliveries</h1>
         <p className="mt-1 text-muted-foreground">Confirm buyer orders, schedule drops, and log delivery tickets. Logged deliveries flow straight into invoices.</p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatTile label="Open orders" value={String(open.length)} icon={Truck} accent="text-brand-blue bg-brand-blue/10" />
         <StatTile label="Emergency" value={String(emergencies.length)} icon={AlertTriangle} accent={emergencies.length ? "text-red-700 bg-red-100" : "text-muted-foreground bg-muted"} />
         <StatTile label="Awaiting confirmation" value={String(open.filter((o) => o.status === "requested").length)} icon={Clock} accent="text-amber-700 bg-amber-100" />

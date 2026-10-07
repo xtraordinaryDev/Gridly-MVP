@@ -10,11 +10,11 @@ import {
   LayoutDashboard,
   Send,
   Settings,
-  ShieldCheck,
   Truck,
   Building2,
 } from "lucide-react"
 
+import { GridLinkLogo } from "@/components/brand/logo"
 import { PortalMobileNav, PortalSidebar, type PortalNavItem } from "@/components/portal-nav"
 
 const NAV: PortalNavItem[] = [
@@ -35,12 +35,7 @@ const FOOTER = "GridLink Vendor Portal"
 function Brand() {
   return (
     <Link href="/vendor/dashboard" className="flex h-16 shrink-0 items-center gap-2 border-b border-white/10 px-5">
-      <span className="flex size-8 items-center justify-center rounded-lg bg-white/10">
-        <ShieldCheck className="size-4 text-emerald" />
-      </span>
-      <span className="text-base font-bold tracking-tight">
-        Grid<span className="text-brand-blue">Link</span>
-      </span>
+      <GridLinkLogo tone="dark" />
       <span className="ml-1 rounded bg-emerald/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald">
         Vendor
       </span>

@@ -75,7 +75,7 @@ export function DirectoryFiltersPanel({
   }
 
   return (
-    <aside className="sticky top-20 flex w-full shrink-0 flex-col gap-4 lg:w-[280px]">
+    <aside className="flex w-full shrink-0 flex-col gap-4 lg:sticky lg:top-20 lg:w-[280px]">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -191,6 +191,7 @@ export function DirectoryFiltersPanel({
             <Label htmlFor="emergency">Emergency response</Label>
             <Select
               value={filters.emergency}
+              items={DIRECTORY_FILTER_OPTIONS.emergency.map((o) => ({ value: o.value, label: o.label }))}
               onValueChange={(v) => patch({ emergency: (v ?? "any") as EmergencyFilter })}
             >
               <SelectTrigger id="emergency" className="mt-1.5">
@@ -225,7 +226,8 @@ export function DirectoryFiltersPanel({
                 value={filters.fleetMax === 200 ? "" : filters.fleetMax}
                 onChange={(e) =>
                   patch({
-                    fleetMax: Number(e.target.value) || DIRECTORY_FILTER_OPTIONS.fleetMax,
+                    // Empty means "no maximum"; an explicit 0 is a real maximum.
+                    fleetMax: e.target.value === "" ? DIRECTORY_FILTER_OPTIONS.fleetMax : Math.max(0, Number(e.target.value) || 0),
                   })
                 }
               />

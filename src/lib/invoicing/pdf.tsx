@@ -47,6 +47,10 @@ const s = StyleSheet.create({
   tGrand: { borderTopWidth: 1, borderTopColor: border, marginTop: 4, paddingTop: 6 },
   notes: { marginTop: 20, padding: 10, backgroundColor: "#F9FAFB", borderRadius: 4 },
   footer: { position: "absolute", bottom: 28, left: 40, right: 40, fontSize: 8, color: muted, textAlign: "center" },
+  voidBanner: { marginBottom: 16, padding: 10, borderRadius: 4, backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FCA5A5" },
+  voidTitle: { fontSize: 12, fontWeight: 700, color: "#B91C1C" },
+  voidMark: { position: "absolute", top: 330, left: 90, fontSize: 130, fontWeight: 700, color: "#FCA5A5", opacity: 0.35, transform: "rotate(-28deg)" },
+  struck: { textDecoration: "line-through", color: muted },
 })
 
 function fmtDate(d: string | null) {
@@ -59,9 +63,11 @@ function fmtDate(d: string | null) {
 }
 
 export function InvoicePdf({ invoice }: { invoice: InvoiceDetail }) {
+  const isVoid = invoice.status === "void"
   return (
-    <Document title={`Invoice ${invoice.number}`} author={invoice.vendorName}>
+    <Document title={`Invoice ${invoice.number}${isVoid ? " (void)" : ""}`} author={invoice.vendorName}>
       <Page size="LETTER" style={s.page}>
+        {isVoid ? <Text style={s.voidMark} fixed>VOID</Text> : null}
         <View style={s.header}>
           <View>
             <Text style={s.brand}>
@@ -75,6 +81,13 @@ export function InvoicePdf({ invoice }: { invoice: InvoiceDetail }) {
             <Text style={s.status}>{INVOICE_STATUS_LABEL[invoice.status]}</Text>
           </View>
         </View>
+
+        {isVoid ? (
+          <View style={s.voidBanner}>
+            <Text style={s.voidTitle}>This invoice was voided by the supplier.</Text>
+            <Text style={{ marginTop: 2, color: "#7F1D1D" }}>Nothing is due on it. It is kept for your records only.</Text>
+          </View>
+        ) : null}
 
         <View style={s.cols}>
           <View style={s.col}>
@@ -137,9 +150,15 @@ export function InvoicePdf({ invoice }: { invoice: InvoiceDetail }) {
           ) : null}
           <View style={[s.tRow, s.tGrand]}>
             <Text style={[s.strong, { fontSize: 12 }]}>Total</Text>
-            <Text style={[s.strong, { fontSize: 12 }]}>{money(invoice.total)}</Text>
+            <Text style={[s.strong, { fontSize: 12 }, isVoid ? s.struck : {}]}>{money(invoice.total)}</Text>
           </View>
-          {invoice.amountPaid > 0 ? (
+          {isVoid ? (
+            <View style={s.tRow}>
+              <Text style={[s.strong, { color: "#B91C1C" }]}>Voided — nothing due</Text>
+              <Text style={[s.strong, { color: "#B91C1C" }]}>{money(0)}</Text>
+            </View>
+          ) : null}
+          {!isVoid && invoice.amountPaid > 0 ? (
             <>
               <View style={s.tRow}>
                 <Text style={{ color: muted }}>Paid</Text>
