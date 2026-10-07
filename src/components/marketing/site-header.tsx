@@ -1,15 +1,15 @@
 import Link from "next/link"
-import { Zap } from "lucide-react"
+import { GridLinkLogo } from "@/components/brand/logo"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 import { SiteMobileMenu } from "@/components/marketing/site-mobile-menu"
 
 const NAV_LINKS = [
-  { label: "Platform", href: "/#platform" },
-  { label: "Solutions", href: "/#solutions" },
+  { label: "AI", href: "/#ai" },
+  { label: "Platform", href: "/#solutions" },
   { label: "Verified Directory", href: "/login" },
-  { label: "About", href: "/#about" },
+  { label: "How it works", href: "/#how-it-works" },
 ]
 
 export function SiteHeader() {
@@ -17,12 +17,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-navy text-navy-foreground">
-            <Zap className="size-4 fill-brand-blue text-brand-blue" />
-          </span>
-          <span className="text-lg font-bold tracking-tight text-navy">
-            Grid<span className="text-brand-blue">Link</span>
-          </span>
+          <GridLinkLogo />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
