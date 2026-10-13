@@ -92,6 +92,94 @@ export type ContactType = (typeof CONTACT_TYPES)[number]
 export const CONTACT_STATUSES = ["active", "paused", "unsubscribed", "bounced"] as const
 export type ContactStatus = (typeof CONTACT_STATUSES)[number]
 
+/**
+ * Turns a CSV export (Google Contacts, Outlook, HubSpot, a hand-made sheet)
+ * into the one-contact-per-line text that parseContactLines understands.
+ * Finds the email column by header name or by content, and picks up name,
+ * company and type columns when they exist, in any order. Quoted fields and
+ * commas inside quotes are handled.
+ */
+export function csvToContactLines(csv: string): { lines: string; rows: number; skipped: number } {
+  const records = parseCsv(csv.replace(/^﻿/, ""))
+  if (records.length === 0) return { lines: "", rows: 0, skipped: 0 }
+
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "")
+  const header = records[0].map(norm)
+  const looksLikeHeader = !records[0].some((c) => EMAIL_RE.test(c.trim()))
+  const find = (...names: string[]) => (looksLikeHeader ? header.findIndex((h) => names.includes(h)) : -1)
+
+  let emailIdx = find("email", "emailaddress", "email1", "emailaddress1", "workemail", "e-mail", "primaryemail", "emailaddressvalue")
+  const firstIdx = find("firstname", "givenname", "first")
+  const lastIdx = find("lastname", "surname", "familyname", "last")
+  const nameIdx = find("name", "fullname", "contact", "contactname", "displayname")
+  const companyIdx = find("company", "organization", "organisation", "companyname", "org", "employer")
+  const typeIdx = find("type", "contacttype", "category", "group", "role")
+
+  const body = looksLikeHeader ? records.slice(1) : records
+  const out: string[] = []
+  let skipped = 0
+  for (const rec of body) {
+    if (rec.every((c) => !c.trim())) continue
+    let email = emailIdx >= 0 ? rec[emailIdx] ?? "" : ""
+    if (!EMAIL_RE.test(email.trim())) {
+      // No usable email column: take the first cell that looks like an address.
+      const guess = rec.findIndex((c) => EMAIL_RE.test(c.trim()))
+      if (guess === -1) {
+        skipped++
+        continue
+      }
+      email = rec[guess]
+      if (emailIdx < 0) emailIdx = guess
+    }
+    const name =
+      nameIdx >= 0 && rec[nameIdx]?.trim()
+        ? rec[nameIdx].trim()
+        : [firstIdx >= 0 ? rec[firstIdx] : "", lastIdx >= 0 ? rec[lastIdx] : ""].map((s) => (s ?? "").trim()).filter(Boolean).join(" ")
+    const company = companyIdx >= 0 ? (rec[companyIdx] ?? "").trim() : ""
+    const rawType = typeIdx >= 0 ? (rec[typeIdx] ?? "").trim().toLowerCase() : ""
+    const type = (CONTACT_TYPES as readonly string[]).includes(rawType) ? rawType : ""
+    const clean = (s: string) => s.replace(/[,;\t]/g, " ").trim()
+    out.push([name ? `${clean(name)} <${email.trim()}>` : email.trim(), clean(company), type].filter(Boolean).join(", "))
+  }
+  return { lines: out.join("\n"), rows: out.length, skipped }
+}
+
+/** Minimal RFC 4180 parser: commas, quotes, doubled quotes, CRLF. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ""
+  let inQuotes = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"'
+          i++
+        } else inQuotes = false
+      } else cell += ch
+      continue
+    }
+    if (ch === '"') inQuotes = true
+    else if (ch === ",") {
+      row.push(cell)
+      cell = ""
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ""
+    } else cell += ch
+  }
+  if (cell !== "" || row.length) {
+    row.push(cell)
+    rows.push(row)
+  }
+  return rows
+}
+
 export type ParsedContact = {
   email: string
   fullName: string | null

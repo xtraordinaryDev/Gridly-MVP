@@ -20,6 +20,7 @@ import type { UpdateContact, UpdateSend, UpdateSendRecipient } from "@/lib/data/
 import {
   CONTACT_STATUSES,
   CONTACT_TYPES,
+  csvToContactLines,
   ensureHtml,
   findPlaceholderBrackets,
   titleFromHtml,
@@ -414,6 +415,7 @@ function ComposeTab({
 
 function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview: boolean }) {
   const router = useRouter()
+  const csvRef = useRef<HTMLInputElement>(null)
   const [text, setText] = useState("")
   const [defaultType, setDefaultType] = useState<string>("investor")
   const [query, setQuery] = useState("")
@@ -481,6 +483,30 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} spellCheck={false} className="font-mono text-xs" placeholder={"Vinny Pallini <vinny@nduroai.com>, Nduro, mentor\nbruce.nordin@stthomas.edu, Bruce Nordin, St. Thomas, mentor"} />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              ref={csvRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ""
+                if (!file) return
+                const { lines, rows, skipped } = csvToContactLines(await file.text())
+                if (!rows) {
+                  toast.error("No email addresses found in that file. It needs an email column, or one address per row.")
+                  return
+                }
+                setText((prev) => (prev.trim() ? prev.trimEnd() + "\n" + lines : lines))
+                toast.success(`${rows} contact${rows === 1 ? "" : "s"} read from ${file.name}${skipped ? `, ${skipped} row${skipped === 1 ? "" : "s"} without an email skipped` : ""}. Review below, then Add contacts.`)
+              }}
+            />
+            <Button type="button" variant="outline" className="gap-2" onClick={() => csvRef.current?.click()}>
+              <FileUp className="size-4" /> Upload CSV
+            </Button>
+            <span className="text-xs text-muted-foreground">Any spreadsheet export with an email column. Name, company and type columns are picked up when present.</span>
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Label className="text-sm text-muted-foreground sm:w-auto">Type for lines that don&rsquo;t say</Label>
             <Select value={defaultType} onValueChange={(v) => setDefaultType(v ?? "other")} items={TYPE_ITEMS}>
