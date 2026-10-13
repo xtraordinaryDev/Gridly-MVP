@@ -41,7 +41,8 @@ Set these on **Production** (and Preview, with staging values once it exists):
 | `RESEND_API_KEY` | Resend → API Keys |
 | `RESEND_FROM_EMAIL` | Must be on a **verified domain** in Resend. The default `onboarding@resend.dev` only delivers to the account owner. Also the sender for Admin → Updates (investor/customer updates); use e.g. `GridLink <updates@gridlink.global>`. |
 | `GRIDLINK_NOTIFY_EMAIL` | Ops inbox for new-RFP alerts |
-| `ANTHROPIC_API_KEY` | AI features (RFP draft, supplier ranking, bid brief) |
+| `ANTHROPIC_API_KEY` | AI features (RFP draft, supplier ranking, bid brief). Every call is metered into `ai_usage` and shown on Admin → Expenses. |
+| `ANTHROPIC_ADMIN_KEY` | Optional. Admin API key; the daily cron pulls Anthropic's official cost report into `ai_cost_daily` so Expenses shows the billed total next to the metered one. |
 | `EIA_API_KEY` | Fuel price benchmarks (free) |
 | `GOOGLE_MAPS_API_KEY` | Station prices. Restrict the key to Geocoding API + Places API (New). |
 | `FUEL_STATION_DAILY_CELL_LIMIT` | Optional, default 30 |
@@ -57,7 +58,7 @@ Migrations live in `supabase/migrations/` and are applied **in filename order**.
 There is no automatic runner yet; apply new ones with the Supabase MCP
 `apply_migration` tool or by pasting into the SQL Editor, then record it here.
 
-Applied to `gridlink`: **0001 → 0016, 0019 and 0020** (as of 2026-10-12).
+Applied to `gridlink`: **0001 → 0016, 0019 → 0022** (as of 2026-10-13).
 
 **Pending — must be applied in the same window as the code that expects them:**
 

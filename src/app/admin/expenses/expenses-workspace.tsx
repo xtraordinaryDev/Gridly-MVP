@@ -7,6 +7,7 @@ import { Loader2, Pencil, Plus, Receipt, Trash2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { Expense } from "@/lib/data/expenses"
+import type { AiSpendSummary } from "@/lib/data/ai-usage"
 import {
   CATEGORY_LABEL,
   EXPENSE_CATEGORIES,
@@ -71,7 +72,99 @@ function formatDate(iso: string | null) {
   return new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
 }
 
-export function ExpensesWorkspace({ expenses, preview }: { expenses: Expense[]; preview: boolean }) {
+const FEATURE_LABEL: Record<string, string> = {
+  rfp_draft: "Draft with AI",
+  supplier_match: "Supplier Match",
+  bid_brief: "Bid Brief",
+}
+
+function formatMicro(micro: number): string {
+  const dollars = micro / 1_000_000
+  if (dollars > 0 && dollars < 0.01) return "<$0.01"
+  return dollars.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
+function AiSpendCard({ ai, costReportConfigured }: { ai: AiSpendSummary; costReportConfigured: boolean }) {
+  const metered = ai.thisMonth.costMicro
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="text-base text-navy">AI token spend</CardTitle>
+            <CardDescription>
+              Every GridLink AI call is metered as it happens{ai.model ? ` (${ai.model})` : ""}, priced at Anthropic&rsquo;s list rates. {ai.monthLabel}.
+            </CardDescription>
+          </div>
+          <Badge variant="secondary" className="shrink-0">Live, not an estimate</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat label="This month, metered" value={formatMicro(metered)} hint={`${ai.thisMonth.calls} call${ai.thisMonth.calls === 1 ? "" : "s"}`} />
+          <Stat label="Tokens this month" value={`${formatTokens(ai.thisMonth.inputTokens + ai.thisMonth.outputTokens)}`} hint={`${formatTokens(ai.thisMonth.inputTokens)} in · ${formatTokens(ai.thisMonth.outputTokens)} out`} />
+          <Stat label="Last month" value={formatMicro(ai.lastMonth.costMicro)} hint={`${ai.lastMonth.calls} call${ai.lastMonth.calls === 1 ? "" : "s"}`} />
+          <Stat
+            label="Billed by Anthropic"
+            value={ai.billed ? formatMicro(ai.billed.thisMonthMicro) : "—"}
+            hint={ai.billed ? `official cost report, month to date` : costReportConfigured ? "waiting for the first nightly sync" : "set ANTHROPIC_ADMIN_KEY to pull the invoice"}
+          />
+        </div>
+
+        {ai.byFeature.length ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="text-xs uppercase tracking-wide">Feature</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wide">Calls</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wide">Tokens in</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wide">Tokens out</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wide">Cost</TableHead>
+                  <TableHead className="text-right text-xs uppercase tracking-wide">Per call</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ai.byFeature.map((f) => (
+                  <TableRow key={f.feature}>
+                    <TableCell className="font-medium text-navy">{FEATURE_LABEL[f.feature] ?? f.feature}</TableCell>
+                    <TableCell className="text-right tabular-nums">{f.calls}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{formatTokens(f.inputTokens)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{formatTokens(f.outputTokens)}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium text-navy">{formatMicro(f.costMicro)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{formatMicro(Math.round(f.costMicro / Math.max(1, f.calls)))}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No AI calls recorded yet this month. Usage appears here the moment a buyer drafts an RFP, ranks suppliers or opens a bid brief.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function ExpensesWorkspace({
+  expenses,
+  preview,
+  ai,
+  costReportConfigured,
+}: {
+  expenses: Expense[]
+  preview: boolean
+  ai: AiSpendSummary
+  costReportConfigured: boolean
+}) {
   const router = useRouter()
   const [editing, setEditing] = useState<Expense | "new" | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Expense | null>(null)
@@ -123,6 +216,8 @@ export function ExpensesWorkspace({ expenses, preview }: { expenses: Expense[]; 
         <Stat label={`One-time in ${year}`} value={formatMoney(oneTimeThisYear)} hint="charged once" />
         <Stat label="Active items" value={String(active.length)} hint={`${expenses.length - active.length} paused`} />
       </div>
+
+      <AiSpendCard ai={ai} costReportConfigured={costReportConfigured} />
 
       {byCategory.length ? (
         <Card>

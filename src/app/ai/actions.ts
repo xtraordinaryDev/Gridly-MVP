@@ -38,6 +38,8 @@ export async function draftRfp(prompt: string): Promise<Result<RfpDraftValues>> 
   const sites = await listAddressOptions(profile.id)
 
   const res = await aiParse({
+    feature: "rfp_draft",
+    userId: profile.id,
     schema: RfpDraftSchema,
     purpose: "Turn a buyer's short description into a complete fuel RFP draft. Fill every field with the most plausible value; when the buyer names a place, map it to a US state. Use the buyer's saved sites to infer states and scale.",
     user: [
@@ -96,7 +98,7 @@ export type RankedSupplier = SupplierRanking["ranked"][number] & { companyName: 
 export async function rankSuppliers(values: unknown): Promise<Result<{ summary: string; ranked: RankedSupplier[] }>> {
   const parsed = RankInput.safeParse(values)
   if (!parsed.success) return { ok: false, message: "Invalid request." }
-  await requireBuyer()
+  const { profile: ranker } = await requireBuyer()
   const input = parsed.data
   const vendors = (await listVerifiedVendors()).filter((v) => input.candidateIds.includes(v.id))
   if (!vendors.length) return { ok: false, message: "No candidates to rank." }
@@ -115,6 +117,8 @@ export async function rankSuppliers(values: unknown): Promise<Result<{ summary: 
   })
 
   const res = await aiParse({
+    feature: "supplier_match",
+    userId: ranker.id,
     schema: SupplierRankingSchema,
     purpose: "Rank verified fuel suppliers for this RFP. Weigh geographic coverage first, then required capabilities and certifications, then scale relative to the volume, then track record and emergency responsiveness when urgency is rush or emergency. Return every candidate, ordered best first. Mark 3–8 as recommended unless fewer are viable.",
     user: [
@@ -164,6 +168,8 @@ export async function generateBidBrief(rfpId: string): Promise<Result<{ brief: B
   })
 
   const res = await aiParse({
+    feature: "bid_brief",
+    userId: profile.id,
     schema: BidBriefSchema,
     purpose: "Write a bid comparison brief for the buyer deciding which supplier to award. Compare total cost, price structure and index exposure, terms, validity, and delivery track record. Recommend exactly one supplier and be explicit about the trade-offs of the others. Quote the actual numbers.",
     user: [

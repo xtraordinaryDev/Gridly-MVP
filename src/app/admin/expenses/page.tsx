@@ -1,10 +1,12 @@
 import { requireAdmin } from "@/lib/auth"
 import { listExpenses } from "@/lib/data/expenses"
+import { getAiSpendSummary } from "@/lib/data/ai-usage"
+import { isCostReportConfigured } from "@/lib/ai/cost-report"
 import { ExpensesWorkspace } from "./expenses-workspace"
 
 export default async function AdminExpensesPage() {
   const { preview } = await requireAdmin()
-  const expenses = await listExpenses()
+  const [expenses, ai] = await Promise.all([listExpenses(), getAiSpendSummary()])
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -15,7 +17,7 @@ export default async function AdminExpensesPage() {
         </p>
       </div>
 
-      <ExpensesWorkspace expenses={expenses} preview={preview} />
+      <ExpensesWorkspace expenses={expenses} preview={preview} ai={ai} costReportConfigured={isCostReportConfigured()} />
     </div>
   )
 }

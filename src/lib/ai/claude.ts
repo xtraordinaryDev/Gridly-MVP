@@ -34,12 +34,50 @@ Be concrete and specific to the data you are given. Never invent suppliers, pric
  * One structured call: system + user prompt in, schema-validated object out.
  * Effort defaults to low for interactive UI features; raise for analysis.
  */
+export type AiFeature = "rfp_draft" | "supplier_match" | "bid_brief"
+
+/**
+ * Records one model call in ai_usage with its list-price cost, so the admin
+ * Expenses page shows real token spend. Never throws: a logging failure must
+ * not fail the feature that made the call.
+ */
+async function recordUsage(params: {
+  feature: AiFeature
+  userId: string | null
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number }
+  ok: boolean
+}) {
+  try {
+    const { createAdminClient } = await import("@/lib/supabase/admin")
+    const { isSupabaseConfigured } = await import("@/lib/supabase/config")
+    if (!isSupabaseConfigured()) return
+    const { costMicrodollars } = await import("@/lib/ai/pricing")
+    await createAdminClient().from("ai_usage").insert({
+      feature: params.feature,
+      model: AI_MODEL,
+      user_id: params.userId && /^[0-9a-f-]{36}$/i.test(params.userId) ? params.userId : null,
+      input_tokens: params.usage.input,
+      output_tokens: params.usage.output,
+      cache_read_tokens: params.usage.cacheRead,
+      cache_write_tokens: params.usage.cacheWrite,
+      cost_microdollars: costMicrodollars(AI_MODEL, params.usage),
+      ok: params.ok,
+    })
+  } catch (err) {
+    console.error("[ai] usage log failed:", err)
+  }
+}
+
 export async function aiParse<S extends z.ZodType>(opts: {
   schema: S
   purpose: string
   user: string
   effort?: "low" | "medium" | "high"
   maxTokens?: number
+  /** Which product feature made the call; shown on the Expenses page. */
+  feature: AiFeature
+  /** The signed-in user, for per-account attribution. */
+  userId?: string | null
 }): Promise<AiResult<z.infer<S>>> {
   if (!isAiConfigured()) return { ok: false, message: "AI features are not configured on this server." }
   try {
@@ -50,6 +88,14 @@ export async function aiParse<S extends z.ZodType>(opts: {
       system: `${SYSTEM_BASE}\n\nTask: ${opts.purpose}`,
       messages: [{ role: "user", content: opts.user }],
     })
+    const usage = {
+      input: response.usage.input_tokens,
+      output: response.usage.output_tokens,
+      cacheRead: response.usage.cache_read_input_tokens ?? 0,
+      cacheWrite: response.usage.cache_creation_input_tokens ?? 0,
+    }
+    const usable = response.stop_reason !== "refusal" && Boolean(response.parsed_output)
+    void recordUsage({ feature: opts.feature, userId: opts.userId ?? null, usage, ok: usable })
     if (response.stop_reason === "refusal") return { ok: false, message: "The assistant declined this request." }
     if (!response.parsed_output) return { ok: false, message: "The assistant returned an unreadable answer. Try again." }
     return {

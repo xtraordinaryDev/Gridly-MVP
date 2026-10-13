@@ -15,6 +15,7 @@ import { defaultNotificationPrefs, prefsFromRow } from "@/lib/data/vendor"
 import { matchesDigestPrefs } from "@/lib/vendor/digest"
 import { BUSINESS_TZ, formatRfpDate } from "@/lib/rfp/dates"
 import { emailForProfile, vendorContacts } from "@/lib/data/contacts"
+import { isCostReportConfigured, syncAnthropicCosts } from "@/lib/ai/cost-report"
 
 /**
  * Daily housekeeping. Call with `Authorization: Bearer $CRON_SECRET` (Vercel
@@ -44,6 +45,7 @@ export async function GET(request: Request) {
     fuelPrices: 0 as number | string,
     stationCells: 0 as number | string,
     sitesGeocoded: 0,
+    aiCostDays: 0 as number | string,
   }
 
   // reminder_log is keyed (kind, ref, day). Reminders check it, send, then
@@ -78,6 +80,15 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("[cron] station price refresh failed", err)
     summary.stationCells = "failed"
+  }
+  // 0c. Anthropic's official cost report, when an Admin key is configured (Admin → Expenses).
+  if (isCostReportConfigured()) {
+    try {
+      summary.aiCostDays = (await syncAnthropicCosts({ days: 4 })).days
+    } catch (err) {
+      console.error("[cron] anthropic cost sync failed", err)
+      summary.aiCostDays = "failed"
+    }
   }
 
   // 1. Close RFPs whose bid deadline passed.
