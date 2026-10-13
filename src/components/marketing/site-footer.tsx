@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { GridLinkLogo } from "@/components/brand/logo"
+import { NewsletterSignup } from "@/components/marketing/newsletter-signup"
 
 const FOOTER_COLUMNS = [
   {
@@ -17,6 +18,7 @@ const FOOTER_COLUMNS = [
       { label: "How it works", href: "/#how-it-works" },
       { label: "Platform", href: "/#solutions" },
       { label: "Become a Supplier", href: "/become-a-supplier" },
+      { label: "hello@gridlink.global", href: "mailto:hello@gridlink.global" },
     ],
   },
   {
@@ -42,6 +44,7 @@ export function SiteFooter() {
             the RFP, ranks verified suppliers and briefs you on every bid. You
             make the award.
           </p>
+          <NewsletterSignup className="mt-6" />
         </div>
 
         {FOOTER_COLUMNS.map((column) => (
@@ -68,6 +71,9 @@ export function SiteFooter() {
       <div className="border-t border-white/10">
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center gap-2 px-4 py-6 text-xs text-white/50 sm:flex-row sm:px-6 lg:px-8">
           <p>&copy; {new Date().getFullYear()} GridLink. All rights reserved.</p>
+          <a href="mailto:hello@gridlink.global" className="transition-colors hover:text-white sm:ml-auto">
+            hello@gridlink.global
+          </a>
         </div>
       </div>
     </footer>
