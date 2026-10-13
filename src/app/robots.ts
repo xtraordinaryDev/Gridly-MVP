@@ -23,6 +23,9 @@ export default function robots(): MetadataRoute.Robots {
         "/reset-password",
         "/forgot-password",
         "/signup/submitted",
+        // Link-only documents (executive summary etc.): reachable, not indexed.
+        "/docs",
+        "/updates",
       ],
     },
     sitemap: `${siteUrl()}/sitemap.xml`,
