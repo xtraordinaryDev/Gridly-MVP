@@ -8,6 +8,7 @@ import { isUuid } from "@/lib/storage/paths"
 import {
   addUpdateContacts,
   deleteUpdateContact,
+  getUpdateSend,
   listUpdateSendRecipients,
   sendUpdateTest,
   sendUpdateToContacts,
@@ -139,4 +140,15 @@ export async function sendRecipientsAction(sendId: string): Promise<ActionResult
   await requireAdmin()
   if (!isUuid(sendId)) return { ok: false, message: "Send not found." }
   return { ok: true, data: await listUpdateSendRecipients(sendId) }
+}
+
+/** Everything the History dialog shows: the email as sent plus every recipient's result. */
+export async function sendDetailAction(
+  sendId: string
+): Promise<ActionResult<{ subject: string; html: string; createdAt: string; recipients: UpdateSendRecipient[] }>> {
+  await requireAdmin()
+  if (!isUuid(sendId)) return { ok: false, message: "Send not found." }
+  const [send, recipients] = await Promise.all([getUpdateSend(sendId), listUpdateSendRecipients(sendId)])
+  if (!send) return { ok: false, message: "Send not found." }
+  return { ok: true, data: { ...send, recipients } }
 }

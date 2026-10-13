@@ -206,6 +206,15 @@ export async function listUpdateSends(): Promise<UpdateSend[]> {
   }))
 }
 
+/** One send with its stored HTML, for the admin's "view email" preview. */
+export async function getUpdateSend(sendId: string): Promise<{ subject: string; html: string; createdAt: string } | null> {
+  if (!isSupabaseConfigured()) return null
+  const admin = createAdminClient()
+  const { data } = await admin.from("update_sends").select("subject, html, created_at").eq("id", sendId).maybeSingle()
+  if (!data) return null
+  return { subject: data.subject as string, html: data.html as string, createdAt: data.created_at as string }
+}
+
 export async function listUpdateSendRecipients(sendId: string): Promise<UpdateSendRecipient[]> {
   if (!isSupabaseConfigured()) return []
   const admin = createAdminClient()

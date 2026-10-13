@@ -50,7 +50,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import {
   addContactsAction,
   deleteContactAction,
-  sendRecipientsAction,
+  sendDetailAction,
   sendTestAction,
   sendUpdateAction,
   updateContactAction,
@@ -593,15 +593,18 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
 
 function HistoryTab({ sends }: { sends: UpdateSend[] }) {
   const [open, setOpen] = useState<UpdateSend | null>(null)
-  const [recipients, setRecipients] = useState<UpdateSendRecipient[] | null>(null)
+  const [detail, setDetail] = useState<{ html: string; recipients: UpdateSendRecipient[] } | null>(null)
+  const [view, setView] = useState<"email" | "recipients">("email")
   const [isLoading, startLoad] = useTransition()
+  const recipients = detail?.recipients ?? null
 
   function show(send: UpdateSend) {
     setOpen(send)
-    setRecipients(null)
+    setDetail(null)
+    setView("email")
     startLoad(async () => {
-      const res = await sendRecipientsAction(send.id)
-      if (res.ok) setRecipients(res.data)
+      const res = await sendDetailAction(send.id)
+      if (res.ok) setDetail({ html: res.data.html, recipients: res.data.recipients })
       else toast.error(res.message)
     })
   }
@@ -650,14 +653,25 @@ function HistoryTab({ sends }: { sends: UpdateSend[] }) {
       </CardContent>
 
       <Dialog open={open !== null} onOpenChange={(o) => { if (!o) setOpen(null) }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-navy">{open?.subject}</DialogTitle>
-            <DialogDescription>{open ? `${formatDateTime(open.createdAt)} · ${open.sentCount} delivered, ${open.failedCount} failed` : null}</DialogDescription>
+            <DialogDescription>
+              {open ? `Sent ${formatDateTime(open.createdAt)}${open.sentByName ? ` by ${open.sentByName}` : ""} · ${open.recipientCount} recipient${open.recipientCount === 1 ? "" : "s"} · ${open.sentCount} delivered, ${open.failedCount} failed` : null}
+            </DialogDescription>
           </DialogHeader>
-          {isLoading || !recipients ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading recipients…</div>
-          ) : recipients.length === 0 ? (
+          <div className="flex gap-1 rounded-lg bg-muted/60 p-1 text-sm">
+            <button type="button" onClick={() => setView("email")} className={cn("flex-1 rounded-md px-3 py-1.5 font-medium transition-colors", view === "email" ? "bg-card text-navy shadow-sm" : "text-muted-foreground hover:text-navy")}>Email as sent</button>
+            <button type="button" onClick={() => setView("recipients")} className={cn("flex-1 rounded-md px-3 py-1.5 font-medium transition-colors", view === "recipients" ? "bg-card text-navy shadow-sm" : "text-muted-foreground hover:text-navy")}>Recipients ({recipients?.length ?? open?.recipientCount ?? 0})</button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+          {isLoading || !detail ? (
+            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading…</div>
+          ) : view === "email" ? (
+            <div className="overflow-hidden rounded-lg border border-border bg-muted/40">
+              <iframe title="Email as sent" sandbox="" srcDoc={detail.html} className="h-[62vh] w-full bg-white" />
+            </div>
+          ) : !recipients || recipients.length === 0 ? (
             <p className="py-6 text-sm text-muted-foreground">No recipients were recorded for this send.</p>
           ) : (
             <ul className="divide-y divide-border rounded-lg border border-border text-sm">
@@ -675,6 +689,7 @@ function HistoryTab({ sends }: { sends: UpdateSend[] }) {
               ))}
             </ul>
           )}
+          </div>
         </DialogContent>
       </Dialog>
     </Card>
