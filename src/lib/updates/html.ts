@@ -57,6 +57,21 @@ export function personalize(
     .replace(/\{\{\s*unsubscribe_url\s*\}\}/g, recipient.unsubscribeUrl)
 }
 
+/**
+ * Accepts either a full HTML email or plain text. Plain text (no tags) is
+ * wrapped in a minimal, email-safe layout so a two-line note still looks
+ * intentional and still carries the unsubscribe link.
+ */
+export function ensureHtml(body: string): string {
+  const trimmed = body.trim()
+  if (/<[a-z][\s\S]*>/i.test(trimmed)) return trimmed
+  const paragraphs = trimmed
+    .split(/\n\s*\n/)
+    .map((p) => `<p style="margin:0 0 16px 0;">${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`)
+    .join("")
+  return `<!DOCTYPE html><html><body style="margin:0; padding:24px; background:#F3F6FA;"><div style="max-width:600px; margin:0 auto; background:#FFFFFF; border-radius:12px; padding:32px; font-family:Helvetica,Arial,sans-serif; font-size:16px; line-height:25px; color:#1E293B;">${paragraphs}<p style="margin:24px 0 0 0; font-size:12px; line-height:18px; color:#94A3B8;">GridLink &middot; <a href="{{unsubscribe_url}}" style="color:#94A3B8;">Unsubscribe</a></p></div></body></html>`
+}
+
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }

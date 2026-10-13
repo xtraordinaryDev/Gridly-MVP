@@ -20,6 +20,7 @@ import type { UpdateContact, UpdateSend, UpdateSendRecipient } from "@/lib/data/
 import {
   CONTACT_STATUSES,
   CONTACT_TYPES,
+  ensureHtml,
   findPlaceholderBrackets,
   titleFromHtml,
   type ContactStatus,
@@ -230,8 +231,18 @@ function ComposeTab({
     setShowPreview(true)
   }
 
-  const canSend = subject.trim().length >= 3 && html.trim().length >= 50
+  const canSend = subject.trim().length > 0 && html.trim().length > 0
   const bracketsBlock = brackets.length > 0 && !allowBrackets
+  const previewHtml = useMemo(() => (html.trim() ? ensureHtml(html) : ""), [html])
+  const blocker = !subject.trim()
+    ? "Add a subject line."
+    : !html.trim()
+      ? "Write or paste a message."
+      : bracketsBlock
+        ? "Fill in the placeholders above, or tick “Send anyway”."
+        : selectedActive.length === 0
+          ? "Tick at least one recipient."
+          : null
 
   function sendTest() {
     startTest(async () => {
@@ -277,7 +288,7 @@ function ComposeTab({
 
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Label htmlFor="html">HTML</Label>
+              <Label htmlFor="html">Message (HTML or plain text)</Label>
               <div className="flex gap-2">
                 <input ref={fileRef} type="file" accept=".html,.htm,text/html" className="hidden" onChange={(e) => loadFile(e.target.files?.[0])} />
                 <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
@@ -288,12 +299,12 @@ function ComposeTab({
                 </Button>
               </div>
             </div>
-            <Textarea id="html" value={html} onChange={(e) => setHtml(e.target.value)} rows={showPreview ? 6 : 14} spellCheck={false} className="font-mono text-xs" placeholder="<!DOCTYPE html> …" />
+            <Textarea id="html" value={html} onChange={(e) => setHtml(e.target.value)} rows={showPreview ? 6 : 14} spellCheck={false} className="font-mono text-xs" placeholder="Paste the newsletter HTML, or just type a short note — plain text is wrapped in a simple GridLink layout for you." />
           </div>
 
           {showPreview && html ? (
             <div className="overflow-hidden rounded-lg border border-border bg-muted/40">
-              <iframe title="Email preview" sandbox="" srcDoc={html} className="h-[620px] w-full bg-white" />
+              <iframe title="Email preview" sandbox="" srcDoc={previewHtml} className="h-[620px] w-full bg-white" />
             </div>
           ) : null}
 
@@ -371,11 +382,11 @@ function ComposeTab({
             )}
           </div>
 
-          <Button type="button" className="w-full gap-2" disabled={!canSend || bracketsBlock || selectedActive.length === 0 || isSending} onClick={() => setConfirmOpen(true)}>
+          <Button type="button" className="w-full gap-2" disabled={blocker !== null || isSending} onClick={() => setConfirmOpen(true)}>
             {isSending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
             Send to {selectedActive.length} contact{selectedActive.length === 1 ? "" : "s"}
           </Button>
-          {bracketsBlock ? <p className="text-xs text-muted-foreground">Fill in the placeholders above (or tick &ldquo;Send anyway&rdquo;) to enable sending.</p> : null}
+          {blocker ? <p className="text-xs text-muted-foreground">{blocker}</p> : null}
         </CardContent>
       </Card>
 

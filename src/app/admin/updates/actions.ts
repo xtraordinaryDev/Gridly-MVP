@@ -14,7 +14,7 @@ import {
   updateUpdateContact,
   type UpdateSendRecipient,
 } from "@/lib/data/updates"
-import { CONTACT_STATUSES, CONTACT_TYPES, EMAIL_RE, parseContactLines } from "@/lib/updates/html"
+import { CONTACT_STATUSES, CONTACT_TYPES, EMAIL_RE, ensureHtml, parseContactLines } from "@/lib/updates/html"
 
 export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; message: string }
 
@@ -91,10 +91,12 @@ export async function deleteContactAction(id: string): Promise<ActionResult> {
   }
 }
 
-const sendSchema = z.object({
-  subject: z.string().trim().min(3, "Add a subject line.").max(200, "Subject is too long."),
-  html: z.string().min(50, "Paste the email HTML.").max(MAX_HTML, "The HTML is too large to send as an email."),
-})
+const sendSchema = z
+  .object({
+    subject: z.string().trim().min(1, "Add a subject line.").max(200, "Subject is too long."),
+    html: z.string().trim().min(1, "Write or paste a message.").max(MAX_HTML, "The message is too large to send as an email."),
+  })
+  .transform((v) => ({ ...v, html: ensureHtml(v.html) }))
 
 export async function sendUpdateAction(input: {
   subject: string
