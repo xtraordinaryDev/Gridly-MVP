@@ -6,6 +6,7 @@ import {
   Building2,
   FileStack,
   LayoutDashboard,
+  Mail,
   Settings,
   ShieldCheck,
   Truck,
@@ -21,6 +22,7 @@ const NAV: PortalNavItem[] = [
   { label: "Buyers", href: "/admin/buyers", icon: Building2 },
   { label: "RFPs", href: "/admin/rfps", icon: Truck },
   { label: "Compliance", href: "/admin/compliance", icon: FileWarning },
+  { label: "Updates", href: "/admin/updates", icon: Mail },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ]
 

@@ -39,7 +39,7 @@ Set these on **Production** (and Preview, with staging values once it exists):
 | `NEXT_PUBLIC_SITE_URL` | `https://<your-domain>` — used in emails and auth redirects |
 | `CRON_SECRET` | Random string; Vercel Cron sends it as a Bearer token |
 | `RESEND_API_KEY` | Resend → API Keys |
-| `RESEND_FROM_EMAIL` | Must be on a **verified domain** in Resend. The default `onboarding@resend.dev` only delivers to the account owner. |
+| `RESEND_FROM_EMAIL` | Must be on a **verified domain** in Resend. The default `onboarding@resend.dev` only delivers to the account owner. Also the sender for Admin → Updates (investor/customer updates); use e.g. `GridLink <updates@gridlink.global>`. |
 | `GRIDLINK_NOTIFY_EMAIL` | Ops inbox for new-RFP alerts |
 | `ANTHROPIC_API_KEY` | AI features (RFP draft, supplier ranking, bid brief) |
 | `EIA_API_KEY` | Fuel price benchmarks (free) |
@@ -57,13 +57,12 @@ Migrations live in `supabase/migrations/` and are applied **in filename order**.
 There is no automatic runner yet; apply new ones with the Supabase MCP
 `apply_migration` tool or by pasting into the SQL Editor, then record it here.
 
-Applied to `gridlink`: **0001 → 0016 and 0019** (as of 2026-10-05).
+Applied to `gridlink`: **0001 → 0016, 0019 and 0020** (as of 2026-10-12).
 
 **Pending — must be applied in the same window as the code that expects them:**
 
 - `0017_security_hardening.sql` — locks storage buckets, moves AI briefs off `rfps`, removes self-service role/verification writes. The app version before it (direct browser uploads, session-client bid writes, `rfps.ai_brief`) breaks once it is applied, so apply it and deploy together. After applying, run `node sec-verify.cjs` from the QA scripts.
 - `0018_admin_guards.sql` — one vendor per application (de-duplicates first) and `buyer_applications.review_notes`.
-
 When adding a migration: number it next in sequence, apply to staging first,
 then production, then update the line above in the same PR.
 
