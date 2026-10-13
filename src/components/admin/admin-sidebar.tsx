@@ -7,6 +7,7 @@ import {
   FileStack,
   LayoutDashboard,
   Mail,
+  Receipt,
   Settings,
   ShieldCheck,
   Truck,
@@ -23,6 +24,7 @@ const NAV: PortalNavItem[] = [
   { label: "RFPs", href: "/admin/rfps", icon: Truck },
   { label: "Compliance", href: "/admin/compliance", icon: FileWarning },
   { label: "Updates", href: "/admin/updates", icon: Mail },
+  { label: "Expenses", href: "/admin/expenses", icon: Receipt },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ]
 
