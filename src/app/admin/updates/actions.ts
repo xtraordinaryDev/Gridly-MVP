@@ -15,7 +15,8 @@ import {
   updateUpdateContact,
   type UpdateSendRecipient,
 } from "@/lib/data/updates"
-import { CONTACT_STATUSES, CONTACT_TYPES, EMAIL_RE, ensureHtml, parseContactLines } from "@/lib/updates/html"
+import { siteUrl } from "@/lib/email"
+import { CONTACT_STATUSES, CONTACT_TYPES, EMAIL_RE, ensureHtml, parseContactLines, personalize } from "@/lib/updates/html"
 
 export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; message: string }
 
@@ -150,5 +151,8 @@ export async function sendDetailAction(
   if (!isUuid(sendId)) return { ok: false, message: "Send not found." }
   const [send, recipients] = await Promise.all([getUpdateSend(sendId), listUpdateSendRecipients(sendId)])
   if (!send) return { ok: false, message: "Send not found." }
-  return { ok: true, data: { ...send, recipients } }
+  // Each recipient got their own merged copy; show the preview the way the first recipient saw it.
+  const sample = recipients[0]
+  const html = personalize(send.html, { fullName: sample?.fullName ?? null, unsubscribeUrl: `${siteUrl()}/updates/unsubscribe/preview` })
+  return { ok: true, data: { ...send, html, recipients } }
 }
