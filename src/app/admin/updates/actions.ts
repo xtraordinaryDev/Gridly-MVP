@@ -25,9 +25,13 @@ const statusSchema = z.enum(CONTACT_STATUSES)
 
 const MAX_HTML = 400_000 // ~400 KB; Resend's limit is far higher but email clients clip around 100 KB
 
+const GROUP_MAX = 40
+const cleanGroup = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, GROUP_MAX) : "") || null
+
 export async function addContactsAction(input: {
   text: string
   defaultType: string
+  group?: string
 }): Promise<ActionResult<{ added: number; updated: number; rejected: string[] }>> {
   const { profile } = await requireAdmin()
   const text = typeof input?.text === "string" ? input.text.slice(0, 200_000) : ""
@@ -37,7 +41,7 @@ export async function addContactsAction(input: {
     return { ok: false, message: rejected.length ? `No valid addresses found. ${rejected.length} line(s) couldn't be read.` : "Paste at least one email address." }
   }
   try {
-    const result = await addUpdateContacts(contacts, profile.id)
+    const result = await addUpdateContacts(contacts, profile.id, cleanGroup(input?.group))
     revalidatePath("/admin/updates")
     return { ok: true, data: { ...result, rejected } }
   } catch (err) {
@@ -53,6 +57,7 @@ export async function updateContactAction(input: {
   fullName?: string
   company?: string
   notes?: string
+  groupName?: string
 }): Promise<ActionResult> {
   await requireAdmin()
   if (!isUuid(input?.id)) return { ok: false, message: "Contact not found." }
@@ -70,6 +75,7 @@ export async function updateContactAction(input: {
   if (input.fullName !== undefined) patch.fullName = String(input.fullName).trim().slice(0, 120) || null
   if (input.company !== undefined) patch.company = String(input.company).trim().slice(0, 120) || null
   if (input.notes !== undefined) patch.notes = String(input.notes).trim().slice(0, 2000) || null
+  if (input.groupName !== undefined) patch.groupName = cleanGroup(input.groupName)
   try {
     await updateUpdateContact(input.id, patch)
     revalidatePath("/admin/updates")

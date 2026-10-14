@@ -21,6 +21,7 @@ export type UpdateContact = {
   contactType: ContactType
   status: ContactStatus
   notes: string | null
+  groupName: string | null
   createdAt: string
   updatedAt: string
 }
@@ -58,6 +59,7 @@ function rowToContact(r: Record<string, unknown>): UpdateContact {
     contactType: r.contact_type as ContactType,
     status: r.status as ContactStatus,
     notes: s(r.notes),
+    groupName: s(r.group_name),
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   }
@@ -74,7 +76,7 @@ export async function listUpdateContacts(): Promise<UpdateContact[]> {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("update_contacts")
-    .select("id, email, full_name, company, contact_type, status, notes, created_at, updated_at")
+    .select("id, email, full_name, company, contact_type, status, notes, group_name, created_at, updated_at")
     .order("created_at", { ascending: false })
   if (error) {
     console.error("[updates] listUpdateContacts:", error.message)
@@ -90,7 +92,8 @@ export async function listUpdateContacts(): Promise<UpdateContact[]> {
  */
 export async function addUpdateContacts(
   contacts: ParsedContact[],
-  createdBy: string | null
+  createdBy: string | null,
+  groupName: string | null = null
 ): Promise<{ added: number; updated: number }> {
   if (!isSupabaseConfigured() || contacts.length === 0) return { added: 0, updated: 0 }
   const admin = createAdminClient()
@@ -108,6 +111,7 @@ export async function addUpdateContacts(
       full_name: c.fullName,
       company: c.company,
       contact_type: c.contactType,
+      group_name: groupName,
       created_by: createdBy && /^[0-9a-f-]{36}$/i.test(createdBy) ? createdBy : null,
     }))
   if (inserts.length) {
@@ -123,6 +127,7 @@ export async function addUpdateContacts(
     if (c.fullName) patch.full_name = c.fullName
     if (c.company) patch.company = c.company
     if (c.contactType !== "other") patch.contact_type = c.contactType
+    if (groupName) patch.group_name = groupName
     const { error } = await admin.from("update_contacts").update(patch).eq("id", id)
     if (!error) updated++
   }
@@ -132,7 +137,7 @@ export async function addUpdateContacts(
 
 export async function updateUpdateContact(
   id: string,
-  patch: Partial<Pick<UpdateContact, "fullName" | "company" | "contactType" | "status" | "notes">>
+  patch: Partial<Pick<UpdateContact, "fullName" | "company" | "contactType" | "status" | "notes" | "groupName">>
 ): Promise<void> {
   if (!isSupabaseConfigured()) return
   const admin = createAdminClient()
@@ -142,6 +147,7 @@ export async function updateUpdateContact(
   if (patch.contactType !== undefined) row.contact_type = patch.contactType
   if (patch.status !== undefined) row.status = patch.status
   if (patch.notes !== undefined) row.notes = patch.notes
+  if (patch.groupName !== undefined) row.group_name = patch.groupName
   const { error } = await admin.from("update_contacts").update(row).eq("id", id)
   if (error) throw new Error(error.message)
 }

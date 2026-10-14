@@ -95,6 +95,10 @@ const SEND_STATUS_CLASS: Record<UpdateSend["status"], string> = {
   failed: "bg-destructive/10 text-destructive",
 }
 
+function groupsOf(contacts: UpdateContact[]): string[] {
+  return [...new Set(contacts.map((c) => c.groupName).filter((g): g is string => Boolean(g)))].sort((a, b) => a.localeCompare(b))
+}
+
 function formatDateTime(value: string | null) {
   if (!value) return "—"
   return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
@@ -185,8 +189,11 @@ function ComposeTab({
   const [showPreview, setShowPreview] = useState(false)
   const [testTo, setTestTo] = useState("")
   const [typeFilter, setTypeFilter] = useState("all")
+  const [groupFilter, setGroupFilter] = useState("all")
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const groups = groupsOf(contacts)
+  const groupItems = [{ value: "all", label: "All groups" }, ...groups.map((g) => ({ value: g, label: g }))]
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [allowBrackets, setAllowBrackets] = useState(false)
   const [isSending, startSend] = useTransition()
@@ -198,10 +205,11 @@ function ComposeTab({
     const q = query.trim().toLowerCase()
     return contacts.filter((c) => {
       if (typeFilter !== "all" && c.contactType !== typeFilter) return false
+      if (groupFilter !== "all" && c.groupName !== groupFilter) return false
       if (!q) return true
-      return [c.fullName, c.email, c.company].some((v) => v?.toLowerCase().includes(q))
+      return [c.fullName, c.email, c.company, c.groupName].some((v) => v?.toLowerCase().includes(q))
     })
-  }, [contacts, typeFilter, query])
+  }, [contacts, typeFilter, groupFilter, query])
 
   const selectable = shown.filter((c) => c.status === "active")
   const selectedActive = contacts.filter((c) => selected.has(c.id) && c.status === "active")
@@ -352,6 +360,12 @@ function ComposeTab({
               <SelectContent>{TYPE_FILTER_ITEMS.map((i) => <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
+          {groups.length ? (
+            <Select value={groupFilter} onValueChange={(v) => setGroupFilter(v ?? "all")} items={groupItems}>
+              <SelectTrigger className="w-full" aria-label="Group"><SelectValue /></SelectTrigger>
+              <SelectContent>{groupItems.map((i) => <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : null}
           <div className="flex flex-wrap gap-2 text-xs">
             <Button type="button" variant="ghost" size="xs" onClick={selectShown} disabled={!selectable.length}>Select shown ({selectable.length})</Button>
             <Button type="button" variant="ghost" size="xs" onClick={selectAllActive} disabled={!activeCount}>Select all active</Button>
@@ -375,6 +389,7 @@ function ComposeTab({
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1">
                       <Badge variant="secondary" className="text-[10px]">{TYPE_LABEL[c.contactType]}</Badge>
+                      {c.groupName ? <Badge className="bg-brand-blue/10 text-[10px] text-brand-blue">{c.groupName}</Badge> : null}
                       {disabled ? <StatusPill status={c.status} /> : null}
                     </span>
                   </label>
@@ -418,9 +433,13 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
   const csvRef = useRef<HTMLInputElement>(null)
   const [text, setText] = useState("")
   const [defaultType, setDefaultType] = useState<string>("investor")
+  const [group, setGroup] = useState("")
   const [query, setQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [groupFilter, setGroupFilter] = useState("all")
+  const groups = groupsOf(contacts)
+  const groupItems = [{ value: "all", label: "All groups" }, ...groups.map((g) => ({ value: g, label: g }))]
   const [pendingDelete, setPendingDelete] = useState<UpdateContact | null>(null)
   const [isAdding, startAdd] = useTransition()
   const [isMutating, startMutate] = useTransition()
@@ -430,14 +449,15 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
     return contacts.filter((c) => {
       if (typeFilter !== "all" && c.contactType !== typeFilter) return false
       if (statusFilter !== "all" && c.status !== statusFilter) return false
+      if (groupFilter !== "all" && c.groupName !== groupFilter) return false
       if (!q) return true
-      return [c.fullName, c.email, c.company].some((v) => v?.toLowerCase().includes(q))
+      return [c.fullName, c.email, c.company, c.groupName].some((v) => v?.toLowerCase().includes(q))
     })
-  }, [contacts, query, typeFilter, statusFilter])
+  }, [contacts, query, typeFilter, statusFilter, groupFilter])
 
   function add() {
     startAdd(async () => {
-      const res = await addContactsAction({ text, defaultType })
+      const res = await addContactsAction({ text, defaultType, group })
       if (!res.ok) {
         toast.error(res.message)
         return
@@ -513,6 +533,9 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
               <SelectTrigger className="w-40" aria-label="Default type"><SelectValue /></SelectTrigger>
               <SelectContent>{TYPE_ITEMS.map((i) => <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>)}</SelectContent>
             </Select>
+            <Label htmlFor="contact-group" className="text-sm text-muted-foreground">Group</Label>
+            <Input id="contact-group" list="contact-groups" value={group} onChange={(e) => setGroup(e.target.value)} maxLength={40} placeholder="e.g. gener8tor" className="w-44" />
+            <datalist id="contact-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
             <Button type="button" className="gap-2 sm:ml-auto" disabled={!text.trim() || isAdding} onClick={add}>
               {isAdding ? <Loader2 className="size-4 animate-spin" /> : <Users className="size-4" />} Add contacts
             </Button>
@@ -541,6 +564,12 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
                 <SelectTrigger className="w-36" aria-label="Status filter"><SelectValue /></SelectTrigger>
                 <SelectContent>{STATUS_FILTER_ITEMS.map((i) => <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>)}</SelectContent>
               </Select>
+              {groups.length ? (
+                <Select value={groupFilter} onValueChange={(v) => setGroupFilter(v ?? "all")} items={groupItems}>
+                  <SelectTrigger className="w-40" aria-label="Group filter"><SelectValue /></SelectTrigger>
+                  <SelectContent>{groupItems.map((i) => <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>)}</SelectContent>
+                </Select>
+              ) : null}
             </div>
           </div>
         </CardHeader>
@@ -551,6 +580,7 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="text-xs uppercase tracking-wide">Contact</TableHead>
                   <TableHead className="text-xs uppercase tracking-wide">Company</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wide">Group</TableHead>
                   <TableHead className="text-xs uppercase tracking-wide">Type</TableHead>
                   <TableHead className="text-xs uppercase tracking-wide">Status</TableHead>
                   <TableHead className="text-xs uppercase tracking-wide">Added</TableHead>
@@ -559,7 +589,7 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
               </TableHeader>
               <TableBody>
                 {shown.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">{contacts.length === 0 ? "No contacts yet." : "No contacts match."}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">{contacts.length === 0 ? "No contacts yet." : "No contacts match."}</TableCell></TableRow>
                 ) : (
                   shown.map((c) => (
                     <TableRow key={c.id}>
@@ -568,6 +598,19 @@ function ContactsTab({ contacts, preview }: { contacts: UpdateContact[]; preview
                         <span className="block truncate text-xs text-muted-foreground">{c.email}</span>
                       </TableCell>
                       <TableCell className="max-w-[180px] truncate text-muted-foreground">{c.company ?? "—"}</TableCell>
+                      <TableCell>
+                        <Input
+                          key={c.groupName ?? ""}
+                          defaultValue={c.groupName ?? ""}
+                          list="contact-groups"
+                          maxLength={40}
+                          placeholder="—"
+                          aria-label={`Group for ${c.email}`}
+                          className="h-8 w-36 text-xs"
+                          onBlur={(e) => { const v = e.target.value.trim(); if (v !== (c.groupName ?? "")) patch(c.id, { groupName: v }) }}
+                          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Select value={c.contactType} onValueChange={(v) => v && patch(c.id, { contactType: v })} items={TYPE_ITEMS}>
                           <SelectTrigger className="h-8 w-32 text-xs" aria-label="Type"><SelectValue /></SelectTrigger>
