@@ -30,6 +30,7 @@ import { siteUrl } from "@/emails/components/email-layout"
 import { SiteHeader } from "@/components/marketing/site-header"
 import { SiteFooter } from "@/components/marketing/site-footer"
 import { HeroField } from "@/components/marketing/hero-field"
+import { FeatureShowcase } from "@/components/marketing/feature-showcase"
 
 const INDUSTRIES = [
   "Trucking & Logistics",
@@ -220,6 +221,9 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* Product showcase: tabbed, animated screens from the app */}
+        <FeatureShowcase />
 
         {/* Industry strip */}
         <section className="border-b border-border bg-background">
