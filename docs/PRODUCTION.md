@@ -8,24 +8,16 @@ against it. Keep this current; a second engineer should be able to follow it col
 | | Production | Local / staging |
 |---|---|---|
 | App | Vercel **Production** deployment (`main` branch) | `npm run dev`, or Vercel **Preview** deployments |
-| Database | Supabase project **`gridlink`** (`vpyzimufcrkuxtkbzcmx`, us-west-2) | Same project today — see "Staging" below |
+| Database | Supabase project **`gridlink-prod`** (`lmywnucxnaydvnrslisf`, us-east-2) | Supabase project **`gridlink`** (`vpyzimufcrkuxtkbzcmx`, us-west-2), the original project, now staging |
 | Demo logins | **Off** (`NEXT_PUBLIC_DEMO_MODE` unset) | On (`NEXT_PUBLIC_DEMO_MODE=true`) |
+| URL | https://www.gridlink.global (branch `main`) | https://test.gridlink.global (branch `staging`), plus `npm run dev` |
 | Seed scripts | **Refuse to run** | Allowed |
 
-**Open item — the database still holds demo data.** As of 2026-10-01 the
-`gridlink` project contains the seeded demo set (7 `*demo.example.com` logins,
-~33 vendors, 16 RFPs, 38 invoices, 40 orders, 13 uploaded files). Before the
-first real customer signs up, either reset it (see "Resetting demo data") or
-stand up a separate production project and leave this one as staging.
+**Production split (2026-10-20).** `gridlink-prod` was created empty from migrations 0001 → 0023 and holds only real data: the Updates contact list and send history, the expense ledger, and the two founder admin logins. The original `gridlink` project keeps the demo set and is the staging database behind test.gridlink.global and local development.
 
 ### Staging
 
-There is currently one Supabase project because the free plan allows two active
-projects and the other slot is used by an unrelated app. When you want a real
-staging database: pause the other project or upgrade the org to Pro, create
-`gridlink-staging`, apply the migrations (below), point `.env.local` and Vercel
-**Preview** env vars at it, and run the seed scripts there with
-`NEXT_PUBLIC_DEMO_MODE=true`. Never set that flag on Production.
+Staging is the original `gridlink` project. Vercel **Preview** env vars and `.env.local` point at it with `NEXT_PUBLIC_DEMO_MODE=true`; the `staging` git branch deploys to test.gridlink.global. Apply every new migration to staging first, then to `gridlink-prod`, then record it below. Never set the demo flag on Production.
 
 ## Environment variables (Vercel → Settings → Environment Variables)
 
@@ -58,7 +50,7 @@ Migrations live in `supabase/migrations/` and are applied **in filename order**.
 There is no automatic runner yet; apply new ones with the Supabase MCP
 `apply_migration` tool or by pasting into the SQL Editor, then record it here.
 
-Applied to `gridlink`: **0001 → 0016, 0019 → 0022** (as of 2026-10-13).
+Applied to `gridlink` (staging): **0001 → 0016, 0019 → 0023** (0017/0018 pending). Applied to `gridlink-prod`: **0001 → 0023 in full** (as of 2026-10-20).
 
 **Pending — must be applied in the same window as the code that expects them:**
 
