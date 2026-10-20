@@ -18,7 +18,7 @@ export default function BecomeASupplierPage() {
       <SiteHeader />
 
       <main className="flex-1 bg-accent/30">
-        <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+        <div className="mx-auto w-full max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
           <div className="text-center">
             <Badge className="mb-5 gap-1.5 rounded-full bg-emerald/15 text-emerald">
               <BadgeCheck className="size-3.5" />
@@ -28,9 +28,9 @@ export default function BecomeASupplierPage() {
               Become a Supplier
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
-              Tell us a bit about your company. This is a quick interest form —
-              once we review it, we&apos;ll send a secure link to complete your
-              full verification profile.
+              Five quick questions, about two minutes. Once we review your
+              answers we&apos;ll send a secure link to complete your full
+              verification profile.
             </p>
           </div>
 
