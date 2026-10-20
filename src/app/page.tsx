@@ -29,6 +29,7 @@ import {
 import { siteUrl } from "@/emails/components/email-layout"
 import { SiteHeader } from "@/components/marketing/site-header"
 import { SiteFooter } from "@/components/marketing/site-footer"
+import { HeroField } from "@/components/marketing/hero-field"
 
 const INDUSTRIES = [
   "Trucking & Logistics",
@@ -164,9 +165,13 @@ export default function Home() {
         {/* Hero */}
         <section
           id="platform"
-          className="relative overflow-hidden border-b border-border bg-gradient-to-b from-white to-accent/40"
+          className="relative overflow-hidden border-b border-border bg-white"
         >
-          <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:gap-8 lg:py-28 lg:px-8">
+          {/* Animated fuel-grid field: dots ride slow waves and swell toward the pointer. */}
+          <HeroField className="pointer-events-none absolute inset-0 h-full w-full" />
+          {/* Calm zone behind the headline so the dots never fight the copy. */}
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_70%_at_50%_45%,rgba(255,255,255,0.9)_0%,rgba(255,255,255,0.4)_55%,rgba(255,255,255,0)_100%)] lg:bg-[radial-gradient(ellipse_42%_75%_at_26%_50%,rgba(255,255,255,0.92)_0%,rgba(255,255,255,0.45)_60%,rgba(255,255,255,0)_100%)]" />
+          <div className="relative mx-auto grid w-full max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:gap-8 lg:py-28 lg:px-8">
             <div>
               <Badge
                 variant="secondary"
