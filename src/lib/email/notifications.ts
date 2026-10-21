@@ -224,3 +224,60 @@ export async function sendProfileChangeRequestEmail(params: {
     return { status: "failed" }
   }
 }
+
+/**
+ * Internal alert when a buyer or supplier submits a sign-up application.
+ * Goes to the shared ops inbox (GRIDLINK_NOTIFY_EMAIL) with a reply-to set
+ * to the applicant, so the team can answer straight from the inbox.
+ */
+export async function sendNewApplicationAlert(params: {
+  kind: "buyer" | "supplier"
+  companyName: string
+  contactName: string
+  email: string
+  phone?: string
+  details: [label: string, value: string | null | undefined][]
+}): Promise<{ status: "sent" | "preview" | "no-recipient" | "failed" }> {
+  const to = process.env.GRIDLINK_NOTIFY_EMAIL?.trim()
+  if (!to) return { status: "no-recipient" }
+
+  const label = params.kind === "buyer" ? "New buyer request" : "New supplier application"
+  const adminPath = params.kind === "buyer" ? "/admin/buyers" : "/admin/applications"
+  const subject = `${label}: ${params.companyName}`
+  const width = Math.max(...params.details.map(([k]) => k.length), 7) + 1
+  const text = [
+    `${params.contactName} at ${params.companyName} ${params.kind === "buyer" ? "requested buyer access" : "applied to become a supplier"} on GridLink.`,
+    "",
+    `${"Contact".padEnd(width)} ${params.contactName} <${params.email}>${params.phone ? ` · ${params.phone}` : ""}`,
+    ...params.details
+      .filter(([, v]) => v && String(v).trim())
+      .map(([k, v]) => `${k.padEnd(width)} ${String(v).trim()}`),
+    "",
+    `Review it: ${siteUrl()}${adminPath}`,
+  ].join("\n")
+
+  if (!isEmailConfigured()) {
+    console.info(`[GridLink email preview] ${JSON.stringify({ to: [to], subject, template: "new-application-alert" })}`)
+    return { status: "preview" }
+  }
+
+  try {
+    const { Resend } = await import("resend")
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const { error } = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL?.trim() ?? "GridLink <onboarding@resend.dev>",
+      to,
+      subject,
+      text,
+      replyTo: params.email,
+    })
+    if (error) {
+      console.error("sendNewApplicationAlert error:", error.message)
+      return { status: "failed" }
+    }
+    return { status: "sent" }
+  } catch (err) {
+    console.error("sendNewApplicationAlert error:", err)
+    return { status: "failed" }
+  }
+}

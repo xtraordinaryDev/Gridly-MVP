@@ -4,6 +4,7 @@ import { SupplierInterestSchema } from "@/lib/schemas/supplier-interest"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { sendEmail } from "@/lib/email"
+import { sendNewApplicationAlert } from "@/lib/email/notifications"
 import { TOO_FAST_MESSAGE, accountExists, botSignal, likeExact } from "@/lib/forms/public-form"
 
 export type SubmitInterestResult =
@@ -90,6 +91,21 @@ export async function submitSupplierInterest(
         companyName: data.companyName,
       },
     })
+    // Internal heads-up to the shared inbox; never blocks the applicant's result.
+    await sendNewApplicationAlert({
+      kind: "supplier",
+      companyName: data.companyName,
+      contactName: data.contactName,
+      email: data.email,
+      phone: data.phone,
+      details: [
+        ["Products", data.productsOffered.join(", ")],
+        ["Gallons", `${data.annualGallons} a year`],
+        ["States", data.statesServed.length === 50 ? "All 50 states" : data.statesServed.join(", ")],
+        ["Website", data.website],
+        ["About", data.description],
+      ],
+    }).catch(() => undefined)
 
     return { ok: true }
   } catch (err) {

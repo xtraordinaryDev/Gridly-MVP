@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { BuyerAccessRequestSchema } from "@/lib/schemas/buyer-access-request"
 import { sendEmail } from "@/lib/email"
+import { sendNewApplicationAlert } from "@/lib/email/notifications"
 import { TOO_FAST_MESSAGE, accountExists, botSignal, likeExact } from "@/lib/forms/public-form"
 
 export type RequestResult = { ok: true } | { ok: false; message: string }
@@ -67,6 +68,19 @@ export async function requestBuyerAccess(values: unknown, meta?: unknown): Promi
       template: "buyer-access-request-received",
       data: { contactName: fullName, companyName },
     })
+    // Internal heads-up to the shared inbox; never blocks the applicant's result.
+    await sendNewApplicationAlert({
+      kind: "buyer",
+      companyName,
+      contactName: fullName,
+      email,
+      phone,
+      details: [
+        ["Industry", industry],
+        ["Volume", estimatedVolume],
+        ["Needs", useCase],
+      ],
+    }).catch(() => undefined)
 
     return { ok: true }
   } catch (err) {

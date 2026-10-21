@@ -32,7 +32,7 @@ Set these on **Production** (and Preview, with staging values once it exists):
 | `CRON_SECRET` | Random string; Vercel Cron sends it as a Bearer token |
 | `RESEND_API_KEY` | Resend → API Keys |
 | `RESEND_FROM_EMAIL` | Must be on a **verified domain** in Resend. The default `onboarding@resend.dev` only delivers to the account owner. Also the sender for Admin → Updates (investor/customer updates); use e.g. `GridLink <updates@gridlink.global>`. |
-| `GRIDLINK_NOTIFY_EMAIL` | Ops inbox for new-RFP alerts |
+| `GRIDLINK_NOTIFY_EMAIL` | Shared ops inbox (`hello@gridlink.global`). Gets an alert for every buyer access request and supplier application, every new RFP, and profile-change requests. Reply-to is the applicant. |
 | `ANTHROPIC_API_KEY` | AI features (RFP draft, supplier ranking, bid brief). Every call is metered into `ai_usage` and shown on Admin → Expenses. |
 | `ANTHROPIC_ADMIN_KEY` | Optional. Admin API key; the daily cron pulls Anthropic's official cost report into `ai_cost_daily` so Expenses shows the billed total next to the metered one. |
 | `EIA_API_KEY` | Fuel price benchmarks (free) |
