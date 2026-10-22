@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { Check, CircleDashed, Flame, FlaskConical, Fuel, Leaf, Plane, Truck } from "lucide-react"
 
-import { cn } from "@/lib/utils"
 import {
   SupplierInterestSchema,
   type SupplierInterest,
@@ -14,7 +13,6 @@ import {
   ANNUAL_GALLONS_RANGES,
   SUPPLIER_INTEREST_LIMITS as LIMITS,
 } from "@/lib/schemas/supplier-interest"
-import { US_STATES } from "@/lib/schemas/vendor-application"
 import { useBotCheck } from "@/components/marketing/bot-check"
 import {
   ChoiceCards,
@@ -26,13 +24,11 @@ import {
   type Choice,
 } from "@/components/marketing/step-wizard"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { submitSupplierInterest } from "./actions"
 
 type Product = (typeof INTEREST_PRODUCTS)[number]
 type Gallons = (typeof ANNUAL_GALLONS_RANGES)[number]
-type State = (typeof US_STATES)[number]
 
 const PRODUCT_CHOICES: Choice<Product>[] = [
   { value: "Diesel", label: "Diesel", icon: Truck },
@@ -46,39 +42,19 @@ const PRODUCT_CHOICES: Choice<Product>[] = [
 
 const GALLONS_CHOICES: Choice<Gallons>[] = ANNUAL_GALLONS_RANGES.map((r, i) => ({
   value: r,
-  label: r.replace("M", "M").replace("<1M", "Under 1M"),
+  label: r === "<1M" ? "Under 1M" : r,
   hint: "gallons a year",
   glyph: <Drops n={i + 1} />,
 }))
 
-const REGIONS: Record<string, State[]> = {
-  Northeast: ["Connecticut", "Maine", "Massachusetts", "New Hampshire", "New Jersey", "New York", "Pennsylvania", "Rhode Island", "Vermont"],
-  Southeast: ["Alabama", "Arkansas", "Delaware", "Florida", "Georgia", "Kentucky", "Louisiana", "Maryland", "Mississippi", "North Carolina", "South Carolina", "Tennessee", "Virginia", "West Virginia"],
-  Midwest: ["Illinois", "Indiana", "Iowa", "Kansas", "Michigan", "Minnesota", "Missouri", "Nebraska", "North Dakota", "Ohio", "South Dakota", "Wisconsin"],
-  Southwest: ["Arizona", "New Mexico", "Oklahoma", "Texas"],
-  West: ["Alaska", "California", "Colorado", "Hawaii", "Idaho", "Montana", "Nevada", "Oregon", "Utah", "Washington", "Wyoming"],
-}
+const STEPS = ["products", "volume", "contact"] as const
 
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "border-brand-blue bg-brand-blue text-brand-blue-foreground"
-          : "border-border bg-background text-muted-foreground hover:border-brand-blue/40 hover:text-navy"
-      )}
-    >
-      {active ? <Check className="size-3.5" /> : null}
-      {label}
-    </button>
-  )
-}
-
-const STEPS = ["products", "volume", "states", "company", "contact"] as const
+// Fields validated before leaving each step, so a miss shows on the screen it belongs to.
+const STEP_FIELDS: (keyof SupplierInterest)[][] = [
+  ["productsOffered"],
+  ["annualGallons"],
+  ["companyName", "contactName", "email", "phone"],
+]
 
 export function SupplierInterestForm() {
   const [submitted, setSubmitted] = useState(false)
@@ -93,29 +69,15 @@ export function SupplierInterestForm() {
       contactName: "",
       email: "",
       phone: "",
-      website: "",
-      statesServed: [],
       productsOffered: [],
       annualGallons: undefined,
-      description: "",
     },
   })
 
   const products = useWatch({ control: form.control, name: "productsOffered" })
   const gallons = useWatch({ control: form.control, name: "annualGallons" })
-  const states = useWatch({ control: form.control, name: "statesServed" })
 
-  const canContinue =
-    step === 0 ? products.length > 0 : step === 1 ? Boolean(gallons) : step === 2 ? states.length > 0 : true
-
-  // Fields validated before leaving each step, so a miss shows on the screen it belongs to.
-  const STEP_FIELDS: (keyof SupplierInterest)[][] = [
-    ["productsOffered"],
-    ["annualGallons"],
-    ["statesServed"],
-    ["companyName", "website", "description"],
-    ["contactName", "email", "phone"],
-  ]
+  const canContinue = step === 0 ? products.length > 0 : step === 1 ? Boolean(gallons) : true
 
   async function next() {
     const ok = await form.trigger(STEP_FIELDS[step])
@@ -124,12 +86,6 @@ export function SupplierInterestForm() {
   }
   function back() {
     setStep((s) => Math.max(s - 1, 0))
-  }
-
-  function toggleRegion(list: State[], region: State[]) {
-    const all = region.every((s) => list.includes(s))
-    if (all) return list.filter((s) => !region.includes(s))
-    return [...list, ...region.filter((s) => !list.includes(s))]
   }
 
   function onSubmit(values: SupplierInterest) {
@@ -197,116 +153,6 @@ export function SupplierInterestForm() {
         ) : null}
 
         {step === 2 ? (
-          <StepPanel stepKey="states" className="space-y-8">
-            <StepHeading title="Where do you deliver?" help="Tap a region to select it in one go, then fine-tune by state." />
-            <FormField
-              control={form.control}
-              name="statesServed"
-              render={({ field }) => (
-                <FormItem className="mx-auto max-w-3xl">
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    {Object.entries(REGIONS).map(([name, list]) => {
-                      const all = list.every((s) => field.value.includes(s))
-                      return (
-                        <button
-                          key={name}
-                          type="button"
-                          aria-pressed={all}
-                          onClick={() => field.onChange(toggleRegion(field.value, list))}
-                          className={cn(
-                            "rounded-xl border-2 px-4 py-2 text-sm font-semibold transition-colors",
-                            all ? "border-brand-blue bg-brand-blue/5 text-navy" : "border-transparent bg-card text-muted-foreground shadow-sm hover:border-brand-blue/40 hover:text-navy"
-                          )}
-                        >
-                          {name}
-                        </button>
-                      )
-                    })}
-                    <button
-                      type="button"
-                      className="rounded-xl px-3 py-2 text-sm font-medium text-brand-blue hover:underline"
-                      onClick={() => field.onChange(field.value.length === US_STATES.length ? [] : [...US_STATES])}
-                    >
-                      {field.value.length === US_STATES.length ? "Clear all" : "All 50 states"}
-                    </button>
-                  </div>
-                  <div className="mt-4 flex max-h-64 flex-wrap justify-center gap-2 overflow-y-auto rounded-xl border border-border bg-muted/30 p-3">
-                    {US_STATES.map((state) => (
-                      <Chip
-                        key={state}
-                        label={state}
-                        active={field.value.includes(state)}
-                        onClick={() =>
-                          field.onChange(field.value.includes(state) ? field.value.filter((s) => s !== state) : [...field.value, state])
-                        }
-                      />
-                    ))}
-                  </div>
-                  <p className="text-center text-xs text-muted-foreground">{field.value.length} selected</p>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <StepNav onBack={back} onNext={next} nextDisabled={!canContinue} />
-          </StepPanel>
-        ) : null}
-
-        {step === 3 ? (
-          <StepPanel stepKey="company" className="space-y-8">
-            <StepHeading title="Tell us about your company." help="Buyers see this once you are verified." />
-            <div className="mx-auto grid max-w-xl gap-4">
-              <FormField
-                control={form.control}
-                name="companyName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Company name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Acme Fuel Co." autoComplete="organization" maxLength={LIMITS.companyName} autoFocus {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="website"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Website <span className="font-normal text-muted-foreground">(optional)</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input type="url" inputMode="url" placeholder="https://acmefuel.com" maxLength={LIMITS.website} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Brief description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        rows={4}
-                        placeholder="Operations, coverage area, fleet, and what makes you a strong supplier."
-                        maxLength={LIMITS.description}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            <StepNav onBack={back} onNext={next} />
-          </StepPanel>
-        ) : null}
-
-        {step === 4 ? (
           <StepPanel stepKey="contact" className="space-y-8">
             <StepHeading title="Who should we talk to?" help="We review every application and reply within 3–5 business days with a secure link to finish verification." />
             <div className="mx-auto grid max-w-xl gap-4 sm:grid-cols-2">
@@ -314,10 +160,23 @@ export function SupplierInterestForm() {
                 control={form.control}
                 name="contactName"
                 render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
+                  <FormItem>
                     <FormLabel>Contact name</FormLabel>
                     <FormControl>
                       <Input placeholder="Jordan Rivera" autoComplete="name" maxLength={LIMITS.contactName} autoFocus {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="companyName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Company</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Acme Fuel Co." autoComplete="organization" maxLength={LIMITS.companyName} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

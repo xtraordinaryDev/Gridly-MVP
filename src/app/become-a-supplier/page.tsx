@@ -28,7 +28,7 @@ export default function BecomeASupplierPage() {
               Become a Supplier
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
-              Five quick questions, about two minutes. Once we review your
+              Three quick questions, under a minute. Once we review your
               answers we&apos;ll send a secure link to complete your full
               verification profile.
             </p>

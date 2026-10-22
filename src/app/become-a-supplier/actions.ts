@@ -65,11 +65,11 @@ export async function submitSupplierInterest(
       source: "self_applied",
       status: "pending_review",
       submitted_at: new Date().toISOString(),
-      website_url: data.website || null,
-      licensed_states: data.statesServed,
+      // States, website and the company profile come later in the full
+      // onboarding form; the interest form only asks products, volume, contact.
+      licensed_states: [],
       products_offered: data.productsOffered,
       annual_gallons_range: data.annualGallons,
-      description: data.description,
       sales_rep_first_name: data.contactName,
       sales_rep_email: data.email,
       sales_rep_phone: data.phone,
@@ -101,9 +101,6 @@ export async function submitSupplierInterest(
       details: [
         ["Products", data.productsOffered.join(", ")],
         ["Gallons", `${data.annualGallons} a year`],
-        ["States", data.statesServed.length === 50 ? "All 50 states" : data.statesServed.join(", ")],
-        ["Website", data.website],
-        ["About", data.description],
       ],
     }).catch(() => undefined)
 
